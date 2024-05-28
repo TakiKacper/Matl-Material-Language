@@ -61,7 +61,7 @@ namespace matl
 		//Add Reflection
 	};
 
-	parsed_material parse(const std::string& material_source, matl::context* context);
+	parsed_material parse_material(const std::string& material_source, matl::context* context);
 }
 
 /*
@@ -106,35 +106,53 @@ namespace matl_internal
 
 /*
 =======================================
-	QUOTE
+	STRING REF
 =======================================
 */
 
 namespace matl_internal
 {
-	struct quote
+	struct string_ref
 	{
 	private:
-		const std::string& target;
+		const std::string& source;
 	public:
 		size_t begin;
 		size_t end;
 
-		quote(const std::string& _target, size_t _begin, size_t _end)
-			: target(_target), begin(_begin), end(_end) {};
+		string_ref(const std::string& _source, size_t _begin, size_t _end)
+			: source(_source), begin(_begin), end(_end) {};
 
-		quote(const std::string& _target)
-			: target(_target), begin(0), end(_target.size()) {};
+		string_ref(const std::string& _source)
+			: source(_source), begin(0), end(_source.size()) {};
 
 		operator std::string() const
 		{
-			return target.substr(begin, end - begin);
+			return source.substr(begin, end - begin);
 		}
+
+		size_t size() const
+		{
+			return end - begin;
+		}
+
+		friend bool operator == (const string_ref& q, const std::string& other);
 	};
 
-	bool operator == (const quote& q, const std::string& other)
+	bool operator == (const string_ref& q, const std::string& other)
 	{
-		return std::string(q) == other;
+		if (q.size() != other.size()) return false;
+
+		for (size_t i = 0; i < other.size(); i++)
+			if (q.source.at(i + q.begin) != other.at(i))
+				return false;
+
+		return true;
+	}
+
+	bool operator == (const string_ref& q, const string_ref& p)
+	{
+		return q.begin == p.begin && q.end == p.end;
 	}
 }
 
@@ -146,19 +164,29 @@ namespace matl_internal
 
 namespace matl_internal
 {
-	bool is_operator(const char& c)
+	inline bool is_operator(const char& c)
 	{
 		return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
 			|| c == '>' || c == '<'
 			|| c == ')' || c == '(' || c == '.' || c == ',');
 	}
 
-	bool is_whitespace(const char& c)
+	inline bool is_whitespace(const char& c)
 	{
 		return (c == ' ' || c == '\t' || c == '\0' || c == '\n');
 	}
 
-	int get_spaces(const std::string& source, size_t& iterator)
+	inline bool is_at_source_end(const std::string& source, const size_t& iterator)
+	{
+		return (iterator >= source.size() || source.at(iterator) == '\0');
+	};
+
+	inline bool is_at_line_end(const std::string& source, const size_t& iterator)
+	{
+		return (is_at_source_end(source, iterator) || source.at(iterator) == '\n');
+	};
+
+	inline int get_spaces(const std::string& source, size_t& iterator)
 	{
 		int spaces = 0;
 
@@ -179,7 +207,7 @@ namespace matl_internal
 		return spaces;
 	}
 
-	quote get_quote(const std::string& source, size_t& iterator)
+	inline string_ref get_string_ref(const std::string& source, size_t& iterator)
 	{
 		size_t begin = iterator;
 
@@ -195,7 +223,14 @@ namespace matl_internal
 		if (iterator == begin)
 			matl_throw("Unexpected end of line; Expected token");
 
-		return source.substr(begin, iterator - begin);
+		return string_ref(source, begin, iterator);
+	}
+
+	inline void get_to_new_line(const std::string& source, size_t& iterator)
+	{
+		while (!is_at_line_end(source, iterator))
+			iterator++;
+		iterator++;
 	}
 }
 
@@ -214,7 +249,7 @@ namespace matl_internal
 		struct binary_operator;
 	}
 
-	const math::data_type* const get_data_type(quote name);
+	const math::data_type* const get_data_type(string_ref name);
 	const math::unary_operator* const get_unary_operator(const char& symbol);
 	const math::binary_operator* const get_binary_operator(const char& symbol);
 
@@ -398,6 +433,8 @@ namespace matl_internal
 
 		//data type applied to all integer and float literals eg. 1; 2; 3.14
 		const matl_internal::math::data_type* scalar_data_type = get_data_type({ "scalar" });
+
+		const char comment_char = '#';
 	}
 }
 
@@ -408,9 +445,60 @@ namespace matl_internal
 =======================================
 */
 
-matl::parsed_material matl::parse(const std::string& material_source, matl::context* context)
+namespace matl_internal
 {
+	struct parsing_state
+	{
+		size_t iterator = 0;
+		int line_conter = 0;
+	};
+
+	void parse_line(const std::string& material_source, matl::context* context, parsing_state& state);
+
+	using keyword_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
+
+	std::unordered_map<std::string, keyword_handle> keywords_handles = 
+	{
+		//{"let", nullptr}
+	};
+}
+
+matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
+{
+	matl_internal::parsing_state state;
+
+	while (!matl_internal::is_at_source_end(material_source, state.iterator))
+	{
+		matl_internal::parse_line(material_source, context, state);
+
+		if (matl_internal::is_at_source_end(material_source, state.iterator)) break;
+		matl_internal::get_to_new_line(material_source, state.iterator);
+	}
+
 	return {};
+}
+
+void matl_internal::parse_line(const std::string& material_source, matl::context* context, parsing_state& state)
+{
+	auto& source = material_source;
+	auto& iterator = state.iterator;
+
+	int spaces = get_spaces(source, iterator);
+
+	if (is_at_line_end(source, iterator)) return;
+	if (source.at(iterator) == builtins::comment_char) return;
+	
+	string_ref keyword = get_string_ref(source, iterator);
+
+	auto kh_itr = keywords_handles.find(keyword);
+
+	if (kh_itr == keywords_handles.end())
+	{
+		//Error
+		return;
+	}
+	
+	kh_itr->second(material_source, context, state);
 }
 
 /*
@@ -421,7 +509,7 @@ matl::parsed_material matl::parse(const std::string& material_source, matl::cont
 
 namespace matl_internal
 {
-	const math::data_type* const get_data_type(quote name)
+	const math::data_type* const get_data_type(string_ref name)
 	{
 		for (auto& type : builtins::data_types)
 			if (type.name == name)
