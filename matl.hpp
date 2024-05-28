@@ -813,7 +813,7 @@ namespace matl_internal
 
 		try
 		{
-			expressions_parsing_internal::shunting_yard(new_node, output, operators, source, iterator);
+			//expressions_parsing_internal::shunting_yard(new_node, output, operators, source, iterator);
 		}
 		catch (const matl_exception& exc)
 		{
@@ -1017,9 +1017,6 @@ namespace matl
 	{
 		file_request_callback domain_rc = nullptr;
 		file_request_callback library_rc = nullptr;
-
-		bool cache_domains = false;
-		bool cache_libraries = false;
 	};
 
 	context::context()
@@ -1050,16 +1047,6 @@ namespace matl
 	void context::set_library_request_callback(file_request_callback callback)
 	{
 		impl->library_rc = callback;
-	}
-
-	void context::set_cache_domains(bool do_cache)
-	{
-		impl->cache_domains = do_cache;
-	}
-
-	void context::set_cache_libraries(bool do_cache)
-	{
-		impl->cache_libraries = do_cache;
 	}
 }
 
