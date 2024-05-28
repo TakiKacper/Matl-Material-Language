@@ -2,12 +2,10 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
-#include <exception>
+
 
 //DEFINE MATL_IMPLEMENTATION
 //In order to implement matl in given translation unit
-
 
 
 /*
@@ -72,6 +70,9 @@ namespace matl
 */
 
 #ifdef MATL_IMPLEMENTATION
+
+#include <unordered_map>
+#include <exception>
 
 /*
 =======================================
