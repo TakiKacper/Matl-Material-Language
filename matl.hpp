@@ -9,6 +9,7 @@
 //In order to implement matl in given translation unit
 
 
+
 /*
 =======================================
 	API DECLARATION
@@ -150,10 +151,97 @@ namespace matl_internal
 		return true;
 	}
 
+	bool operator == (const std::string& other, const string_ref& q)
+	{
+		return operator==(q, other);
+	}
+
 	bool operator == (const string_ref& q, const string_ref& p)
 	{
 		return q.begin == p.begin && q.end == p.end;
 	}
+};
+
+/*
+=======================================
+	HETEROGENEOUS MAP
+=======================================
+*/
+
+namespace matl_internal
+{
+	template<class _key, class _value, class _equality_solver>
+	class heterogeneous_map
+	{
+	private:
+		using _record = std::pair<_key, _value>;
+		using _iterator = typename std::vector<_record>::iterator;
+
+		std::vector<_record> records;
+
+	public:
+		heterogeneous_map() {};
+		heterogeneous_map(std::vector<_record> __records)
+			: records(std::move(__records)) {};
+
+		inline _iterator begin()
+		{
+			return records.begin();
+		}
+
+		inline _iterator end()
+		{
+			return records.end();
+		}
+
+		template<class _key2>
+		inline _value& at(const _key2& key)
+		{
+			for (_iterator itr = begin(); itr != end(); itr++)
+				if (_equality_solver::equal(itr->first, key))
+					return itr->second;
+			throw std::runtime_error{"Invalid record"};
+		}
+
+		template<class _key2>
+		inline _iterator find(const _key2& key)
+		{
+			for (_iterator itr = begin(); itr != end(); itr++)
+				if (_equality_solver::equal(itr->first, key))
+					return itr;
+			return end();
+		}
+
+		inline _iterator insert(_record record)
+		{
+			auto itr = find(record.first);
+
+			if (itr == end())
+			{
+				records.push_back(std::move(record));
+				return records.end() - 1;
+			}
+			else
+			{
+				itr->second = std::move(record.second);
+				return itr;
+			}
+		}
+	};
+
+	struct solver
+	{
+		static inline bool equal(const std::string& a, const std::string& b)
+		{
+			return a == b;
+		}
+
+		static inline bool equal(const std::string& a, const string_ref& b)
+		{
+			return b == a;
+		}
+	};
+
 }
 
 /*
@@ -457,9 +545,11 @@ namespace matl_internal
 
 	using keyword_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
 
-	std::unordered_map<std::string, keyword_handle> keywords_handles = 
+	heterogeneous_map<std::string, keyword_handle, solver> keywords_handles =
 	{
-		//{"let", nullptr}
+		{
+			{"let", nullptr}
+		}	
 	};
 }
 
@@ -498,7 +588,7 @@ void matl_internal::parse_line(const std::string& material_source, matl::context
 		return;
 	}
 	
-	kh_itr->second(material_source, context, state);
+	//kh_itr->second(material_source, context, state);
 }
 
 /*
