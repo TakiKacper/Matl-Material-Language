@@ -19,6 +19,14 @@ namespace matl
 		std::string source;
 	};
 
+	struct parsed_material
+	{
+		bool success = false;
+		std::string source;
+		std::vector<std::string> errors;
+		//Add Reflection
+	};
+
 	using file_request_callback = file_request_response(*)(const std::string& file_name);
 
 	class context;
@@ -26,11 +34,15 @@ namespace matl
 	context* create_context();
 	void destroy_context(context*&);
 
+	parsed_material parse_material(const std::string& material_source, matl::context* context);
+	void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
+
 	class context
 	{
 	private:
 		struct implementation;
 		implementation* impl;
+		friend void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 	public:
 		void set_domain_request_callback(file_request_callback callback);
@@ -43,17 +55,6 @@ namespace matl
 		friend context* matl::create_context();
 		friend void matl::destroy_context(matl::context*& context);
 	};
-
-	struct parsed_material
-	{
-		bool success = false;
-		std::string source;
-		std::vector<std::string> errors;
-		//Add Reflection
-	};
-
-	parsed_material parse_material(const std::string& material_source, matl::context* context);
-	void parse_domain(const std::string& domain_source, matl::context* context);
 }
 
 //MATL IMPLEMENTATION
@@ -816,6 +817,31 @@ namespace matl_internal
 	}
 }
 
+//CONTEXT MEMBERS IMPLEMENTATION
+namespace matl_internal
+{
+	namespace domain
+	{
+		struct parsed_domain;
+	}
+}
+namespace matl
+{
+	struct context::implementation
+	{
+		file_request_callback domain_rc = nullptr;
+		file_request_callback library_rc = nullptr;
+
+		matl_internal::heterogeneous_map<
+			std::string,
+			matl_internal::domain::parsed_domain*,
+			matl_internal::hgm_solver
+		> domains;
+
+		~implementation();
+	};
+}
+
 //DOMAIN PARSING
 namespace matl_internal
 {
@@ -980,7 +1006,7 @@ namespace matl_internal
 		};
 	}
 }
-void matl::parse_domain(const std::string& domain_source, matl::context* context)
+void matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context)
 {
 	matl_internal::domain::parsing_state state;
 	state.domain = new matl_internal::domain::parsed_domain;
@@ -1033,7 +1059,7 @@ void matl::parse_domain(const std::string& domain_source, matl::context* context
 		last_position = iterator;
 	}
 	
-	delete state.domain;
+	context->impl->domains.insert({ domain_name, state.domain });
 }
 
 //MATERIAL PARSING
@@ -1193,11 +1219,11 @@ std::string matl::get_language_version()
 //CONTEXT IMPLEMENTATION
 namespace matl
 {
-	struct context::implementation
+	context::implementation::~implementation()
 	{
-		file_request_callback domain_rc = nullptr;
-		file_request_callback library_rc = nullptr;
-	};
+		for (auto& x : domains)
+			delete x.second;
+	}
 
 	context::context()
 	{
