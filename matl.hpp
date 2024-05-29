@@ -8,12 +8,7 @@
 //In order to implement matl in given translation unit
 
 
-/*
-=======================================
-	API DECLARATION
-=======================================
-*/
-
+//API DECLARATION
 namespace matl
 {
 	std::string get_language_version();
@@ -41,9 +36,6 @@ namespace matl
 		void set_domain_request_callback(file_request_callback callback);
 		void set_library_request_callback(file_request_callback callback);
 
-		void set_cache_domains(bool do_cache);
-		void set_cache_libraries(bool do_cache);
-
 	private:
 		context();
 		~context();
@@ -61,25 +53,16 @@ namespace matl
 	};
 
 	parsed_material parse_material(const std::string& material_source, matl::context* context);
+	void parse_domain(const std::string& domain_source, matl::context* context);
 }
 
-/*
-=======================================
-	MATL IMPLEMENTATION
-=======================================
-*/
-
+//MATL IMPLEMENTATION
 #ifdef MATL_IMPLEMENTATION
 
 #include <unordered_map>
 #include <exception>
 
-/*
-=======================================
-	MATL EXCEPTION
-=======================================
-*/
-
+//MATL EXCEPTION
 namespace matl_internal
 {
 	enum class exception_type
@@ -137,12 +120,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	STRING REF
-=======================================
-*/
-
+//STRING REF
 namespace matl_internal
 {
 	struct string_ref
@@ -199,12 +177,7 @@ namespace matl_internal
 	}
 };
 
-/*
-=======================================
-	HETEROGENEOUS MAP
-=======================================
-*/
-
+//HETEROGENEOUS MAP
 namespace matl_internal
 {
 	template<class _key, class _value, class _equality_solver>
@@ -281,12 +254,7 @@ namespace matl_internal
 
 }
 
-/*
-=======================================
-	STRING TRAVERSION
-=======================================
-*/
-
+//STRING TRAVERSION
 namespace matl_internal
 {
 	inline bool is_operator(const char& c)
@@ -314,6 +282,16 @@ namespace matl_internal
 	inline const char& get_char(const std::string& source, size_t& iterator)
 	{
 		return source.at(iterator++);
+	}
+
+	inline void get_to_char(char target, const std::string& source, size_t& iterator)
+	{
+		while (source.at(iterator) != target)
+		{
+			iterator++;
+			if (is_at_source_end(source, iterator))
+				return;
+		}
 	}
 
 	inline int get_spaces(const std::string& source, size_t& iterator)
@@ -364,12 +342,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	INTERNAL TYPES
-=======================================
-*/
-
+//INTERNAL TYPES
 namespace matl_internal
 {
 	namespace math
@@ -496,12 +469,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	BUILTINS
-=======================================
-*/
-
+//BUILTINS
 namespace matl_internal
 {
 	namespace builtins
@@ -612,12 +580,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	MATL TYPE DEFINITIONS
-=======================================
-*/
-
+//MATL TYPE DEFINITIONS
 namespace matl_internal
 {
 	namespace typedefs
@@ -635,12 +598,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	EXPRESSIONS PARSING
-=======================================
-*/
-
+//EXPRESSIONS PARSING
 namespace matl_internal
 {
 	namespace expressions_parsing_internal
@@ -840,18 +798,149 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	PARSING
-=======================================
-*/
+//DOMAIN PARSING
+namespace matl_internal
+{
+	namespace domain
+	{
+		enum class directive_type
+		{
+			dump_block,
+			dump_variables,
+			dump_functions,
+			dump_property,
+			split
+		};
 
+		struct directive
+		{
+			directive_type type;
+			std::string payload;
+			directive(directive_type _type, std::string _payload)
+				: type(std::move(_type)), payload(std::move(_payload)) {};
+		};
+
+		struct symbol
+		{
+			const math::data_type* type;
+			std::string definition;
+		};
+
+		struct parsed_domain
+		{
+			std::vector<directive> directives;
+
+			heterogeneous_map<std::string, const math::data_type*, hgm_solver> properties;
+			heterogeneous_map<std::string, symbol, hgm_solver> symbols;
+		};
+
+		struct parsing_state
+		{
+			size_t iterator = 0;
+			parsed_domain* domain;
+		};
+
+		using directive_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
+
+		namespace directive_handles
+		{
+			void expose(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+
+			void end(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+
+			void property(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+
+			void symbol(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+
+			void dump(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+
+			void split(const std::string& material_source, matl::context* context, parsing_state& state)
+			{
+
+			}
+		}
+
+		heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles =
+		{
+			{
+				{"expose",	 directive_handles::expose},
+				{"end",		 directive_handles::end},
+				{"property", directive_handles::property},
+				{"symbol",	 directive_handles::symbol},
+				{"dump",	 directive_handles::dump},
+				{"split",	 directive_handles::split}
+			}
+		};
+	}
+}
+void matl::parse_domain(const std::string& domain_source, matl::context* context)
+{
+	matl_internal::domain::parsing_state state;
+	state.domain = new matl_internal::domain::parsed_domain;
+
+	auto& source = domain_source;
+	auto& iterator = state.iterator;
+
+	size_t last_position = 0;
+	while (true)
+	{
+		matl_internal::get_to_char('<', domain_source, iterator);
+
+		if (last_position != iterator)
+		{
+			state.domain->directives.push_back(
+				{
+					matl_internal::domain::directive_type::dump_block,
+					std::move(domain_source.substr(last_position, iterator - last_position))
+				}
+			);
+		}
+
+		if (matl_internal::is_at_source_end(source, iterator))
+			break;
+
+		iterator++;
+		auto directive = matl_internal::get_string_ref(source, iterator);
+
+		auto handle = matl_internal::domain::directives_handles.find(directive);
+		if (handle == matl_internal::domain::directives_handles.end())
+		{
+			matl_internal::get_to_char('>', domain_source, iterator);
+		}
+		else
+			handle->second(source, context, state);
+
+		matl_internal::get_to_char('>', domain_source, iterator);
+		iterator++;
+
+		last_position = iterator;
+	}
+	
+	delete state.domain;
+}
+
+//MATERIAL PARSING
 namespace matl_internal
 {
 	struct parsing_state
 	{
 		size_t iterator = 0;
-		int line_conter = 0;
+		int line_counter = 0;
 
 		//std::vector<int> errors;
 
@@ -922,9 +1011,13 @@ namespace matl_internal
 		}	
 	};
 }
-
 matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
 {
+	if (context == nullptr)
+	{
+		return {};	//Error
+	}
+
 	matl_internal::parsing_state state;
 
 	while (!matl_internal::is_at_source_end(material_source, state.iterator))
@@ -937,7 +1030,6 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	return {};
 }
-
 inline void matl_internal::parse_line(const std::string& material_source, matl::context* context, parsing_state& state)
 {
 	auto& source = material_source;
@@ -961,12 +1053,7 @@ inline void matl_internal::parse_line(const std::string& material_source, matl::
 	kh_itr->second(material_source, context, state);
 }
 
-/*
-=======================================
-	BUILTINS RELATED FUNCTIONS IMPLEMENTATION
-=======================================
-*/
-
+//BUILTINS RELATED FUNCTIONS IMPLEMENTATION
 namespace matl_internal
 {
 	const math::data_type* const get_data_type(string_ref name)
@@ -994,12 +1081,7 @@ namespace matl_internal
 	}
 }
 
-/*
-=======================================
-	API IMPLEMENTATION
-=======================================
-*/
-
+//API IMPLEMENTATION
 const std::string language_version = "0.1";
 std::string matl::get_language_version()
 {
@@ -1038,6 +1120,7 @@ namespace matl
 	void destroy_context(context*& context)
 	{
 		delete context;
+		context = nullptr;
 	}
 
 	void context::set_domain_request_callback(file_request_callback callback)
