@@ -74,7 +74,13 @@ namespace matl_internal
 		invalid_syntax,
 
 		invalid_scalar_literal,
-		mismatched_parentheses
+		mismatched_parentheses,
+
+		invalid_directive,
+		cannot_use_directive_here,
+		end_of_directive_expected,
+		invalid_property_type,
+		invalid_dump_type
 	};
 
 	void matl_throw(exception_type type, std::vector<std::string>&& sub_errors);
@@ -109,6 +115,18 @@ namespace matl_internal
 			message = "Invalid syntax"; break;
 		case matl_internal::exception_type::invalid_scalar_literal:
 			message = "Invalid scalar literal"; break;
+		case matl_internal::exception_type::mismatched_parentheses:
+			message = "Mismatched parentheses"; break;
+		case matl_internal::exception_type::invalid_directive:
+			message = "No such directive"; break;
+		case matl_internal::exception_type::cannot_use_directive_here:
+			message = "Cannot use this directive here"; break;
+		case matl_internal::exception_type::end_of_directive_expected:
+			message = "Expected end of directive"; break;
+		case matl_internal::exception_type::invalid_property_type:
+			message = "Invalid property type"; break;
+		case matl_internal::exception_type::invalid_dump_type:
+			message = "Invalid dump type"; break;
 		}
 
 		for (auto& error : sub_errors)
@@ -824,6 +842,8 @@ namespace matl_internal
 		{
 			const math::data_type* type;
 			std::string definition;
+			symbol(const math::data_type* _type, std::string _definition)
+				: type(_type), definition(_definition) {};
 		};
 
 		struct parsed_domain
@@ -838,40 +858,112 @@ namespace matl_internal
 		{
 			size_t iterator = 0;
 			parsed_domain* domain;
+
+			bool expose_closure = false;
 		};
 
-		using directive_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
+		using directive_handle = 
+			void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
 
 		namespace directive_handles
 		{
-			void expose(const std::string& material_source, matl::context* context, parsing_state& state)
+			void expose(const std::string& source, matl::context* context, parsing_state& state)
 			{
+				if (state.expose_closure == true) 
+					matl_throw(exception_type::cannot_use_directive_here, {"expose"});
 
+				state.expose_closure = true;
 			}
 
-			void end(const std::string& material_source, matl::context* context, parsing_state& state)
+			void end(const std::string& source, matl::context* context, parsing_state& state)
 			{
+				if (state.expose_closure == false)  
+					matl_throw(exception_type::cannot_use_directive_here, { "end" });
 
+				state.expose_closure = false;
 			}
 
-			void property(const std::string& material_source, matl::context* context, parsing_state& state)
+			void property(const std::string& source, matl::context* context, parsing_state& state)
 			{
+				if (state.expose_closure)
+				{
+					get_spaces(source, state.iterator);
+					auto type_name = get_string_ref(source, state.iterator);
 
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					auto type = get_data_type(type_name);
+					if (type == nullptr) matl_throw(exception_type::invalid_property_type, {type_name});
+
+					state.domain->properties.insert({ name, type });
+				}
+				else
+				{
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					state.domain->directives.push_back(
+						{ directive_type::dump_property, std::move(name) }
+					);
+				}
 			}
 
-			void symbol(const std::string& material_source, matl::context* context, parsing_state& state)
+			void symbol(const std::string& source, matl::context* context, parsing_state& state)
 			{
+				if (state.expose_closure)
+				{
+					get_spaces(source, state.iterator);
+					auto type_name = get_string_ref(source, state.iterator);
 
+					auto type = get_data_type(type_name);
+					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
+
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					get_spaces(source, state.iterator);
+					if (source.at(state.iterator) != '=')
+						matl_throw(exception_type::invalid_syntax, { "expected '='" });
+
+					state.iterator++;
+
+					if (source.at(state.iterator) == '>')
+						matl_throw(exception_type::invalid_syntax, { "expected symbol definition" });
+
+					size_t begin = state.iterator;
+					get_to_char('>', source, state.iterator);
+
+					state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)}});
+				}
+				else
+					matl_throw(exception_type::cannot_use_directive_here, { "symbol" });
 			}
 
-			void dump(const std::string& material_source, matl::context* context, parsing_state& state)
+			void dump(const std::string& source, matl::context* context, parsing_state& state)
 			{
+				get_spaces(source, state.iterator);
+				auto dump_what = get_string_ref(source, state.iterator);
 
+				if (dump_what == "variables")
+					state.domain->directives.push_back(
+						{ directive_type::dump_variables, {} }
+					);
+				else if (dump_what == "functions")
+					state.domain->directives.push_back(
+						{ directive_type::dump_functions, {} }
+					);
+				else
+					matl_throw(exception_type::invalid_dump_type, { dump_what });
+
+				get_to_char('>', source, state.iterator);
 			}
 
-			void split(const std::string& material_source, matl::context* context, parsing_state& state)
+			void split(const std::string& source, matl::context* context, parsing_state& state)
 			{
-
+				state.domain->directives.push_back(
+					{ directive_type::split, {} }
+				);
 			}
 		}
 
@@ -897,6 +989,7 @@ void matl::parse_domain(const std::string& domain_source, matl::context* context
 	auto& iterator = state.iterator;
 
 	size_t last_position = 0;
+
 	while (true)
 	{
 		matl_internal::get_to_char('<', domain_source, iterator);
@@ -923,7 +1016,16 @@ void matl::parse_domain(const std::string& domain_source, matl::context* context
 			matl_internal::get_to_char('>', domain_source, iterator);
 		}
 		else
+		{
 			handle->second(source, context, state);
+
+			matl_internal::get_spaces(source, state.iterator);
+			if (source.at(state.iterator) != '>')
+				matl_internal::matl_throw(
+					matl_internal::exception_type::end_of_directive_expected, 
+					{}
+			);
+		}
 
 		matl_internal::get_to_char('>', domain_source, iterator);
 		iterator++;
