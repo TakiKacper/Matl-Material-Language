@@ -478,9 +478,9 @@ namespace matl_internal
 		const std::vector<matl_internal::math::data_type> data_types
 		{
 			{ "scalar", },
-			{ "vec2", },
-			{ "vec3", },
-			{ "vec4", },
+			{ "vector2", },
+			{ "vector3", },
+			{ "vector4", },
 			{ "texture", }
 		};
 
@@ -489,9 +489,9 @@ namespace matl_internal
 		{
 			{ '-', "negate", 4, {
 				{"scalar", "scalar"},
-				{"vec2", "vec2"},
-				{"vec3", "vec3"},
-				{"vec4", "vec4"}
+				{"vector2", "vector2"},
+				{"vector3", "vector3"},
+				{"vector4", "vector4"}
 			}},
 		};
 
@@ -501,59 +501,59 @@ namespace matl_internal
 			{ '+', "add", 1, {
 				{"scalar", "scalar", "scalar"},
 
-				{"scalar", "vec2", "vec2"},
-				{"vec2", "scalar", "vec2"},
-				{"vec2", "vec2", "vec2"},
+				{"scalar", "vector2", "vector2"},
+				{"vector2", "scalar", "vector2"},
+				{"vector2", "vector2", "vector2"},
 
-				{"scalar", "vec3", "vec3"},
-				{"vec3", "scalar", "vec3"},
-				{"vec3", "vec3", "vec3"},
+				{"scalar", "vector3",  "vector3"},
+				{"vector3", "scalar",  "vector3"},
+				{"vector3", "vector3", "vector3"},
 
-				{"scalar", "vec4", "vec4"},
-				{"vec4", "scalar", "vec4"},
-				{"vec4", "vec3", "vec4"}
+				{"scalar", "vector4",  "vector4"},
+				{"vector4", "scalar",  "vector4"},
+				{"vector4", "vector4", "vector4"}
 			}},
 
 			{ '-', "substract",1, {
 				{"scalar", "scalar", "scalar"},
 
-				{"vec2", "scalar", "vec2"},
-				{"vec2", "vec2", "vec2"},
+				{"vector2", "scalar", "vector2"},
+				{"vector2", "vector2", "vector2"},
 
-				{"vec3", "scalar", "vec3"},
-				{"vec3", "vec3", "vec3"},
+				{"vector3", "scalar", "vector3"},
+				{"vector3", "vector3", "vector3"},
 
-				{"vec4", "scalar", "vec4"},
-				{"vec4", "vec3", "vec4"}
+				{"vector4", "scalar", "vector4"},
+				{"vector4", "vector4", "vector4"}
 			} },
 
 			{ '*', "multiply",2, {
 				{"scalar", "scalar", "scalar"},
 
-				{"scalar", "vec2", "vec2"},
-				{"vec2", "scalar", "vec2"},
-				{"vec2", "vec2", "vec2"},
+				{"scalar", "vector2", "vector2"},
+				{"vector2", "scalar", "vector2"},
+				{"vector2", "vector2", "vector2"},
 
-				{"scalar", "vec3", "vec3"},
-				{"vec3", "scalar", "vec3"},
-				{"vec3", "vec3", "vec3"},
+				{"scalar", "vector3", "vector3"},
+				{"vector3", "scalar", "vector3"},
+				{"vector3", "vector3", "vector3"},
 
-				{"scalar", "vec4", "vec4"},
-				{"vec4", "scalar", "vec4"},
-				{"vec4", "vec4", "vec4"}
+				{"scalar", "vector4", "vector4"},
+				{"vector4", "scalar", "vector4"},
+				{"vector4", "vector4", "vector4"}
 			} },
 
 			{ '/', "divide",2, {
 				{"scalar", "scalar", "scalar"},
 
-				{"vec2", "scalar", "vec2"},
-				{"vec2", "vec2", "vec2"},
+				{"vector2", "scalar", "vector2"},
+				{"vector2", "vector2", "vector2"},
 
-				{"vec3", "scalar", "vec3"},
-				{"vec3", "vec3", "vec3"},
+				{"vector3", "scalar", "vector3"},
+				{"vector3", "vector3", "vector3"},
 
-				{"vec4", "scalar", "vec4"},
-				{"vec4", "vec3", "vec4"}
+				{"vector4", "scalar", "vector4"},
+				{"vector4", "vector4", "vector4"}
 			} },
 		};
 
@@ -1088,12 +1088,7 @@ std::string matl::get_language_version()
 	return language_version;
 }
 
-/*
-=======================================
-	CONTEXT IMPLEMENTATION
-=======================================
-*/
-
+//CONTEXT IMPLEMENTATION
 namespace matl
 {
 	struct context::implementation
