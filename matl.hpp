@@ -267,6 +267,15 @@ namespace matl_internal
 		}
 
 		template<class _key2>
+		inline const _value& at(const _key2& key) const
+		{
+			for (_const_iterator itr = begin(); itr != end(); itr++)
+				if (_equality_solver::equal(itr->first, key))
+					return itr->second;
+			throw std::runtime_error{"Invalid record"};
+		}
+
+		template<class _key2>
 		inline _iterator find(const _key2& key)
 		{
 			for (_iterator itr = begin(); itr != end(); itr++)
@@ -528,14 +537,14 @@ namespace matl_internal
 
 				union node_value
 				{
-					std::string								scalar_value;
-					const typedefs::variable_definition*	variable;
-					const domain::symbol*					symbol;
-					const unary_operator*					unary_operator;
-					const binary_operator*					binary_operator;
-					uint8_t									vector_size;
-					std::vector<uint8_t>					included_vector_components;
-					std::pair<std::string, int>				function_name_and_passed_args;
+					std::string														scalar_value;
+					const std::pair<std::string, typedefs::variable_definition>*	variable;
+					const domain::symbol*											symbol;
+					const unary_operator*											unary_operator;
+					const binary_operator*											binary_operator;
+					uint8_t															vector_size;
+					std::vector<uint8_t>											included_vector_components;
+					std::pair<std::string, int>										function_name_and_passed_args;
 					~node_value() {};
 				} value;
 			};
@@ -688,38 +697,6 @@ namespace matl_internal
 			}
 		};
 	}
-}
-
-//TRANSLATOR
-namespace matl_translator
-{
-	struct translator;
-
-	std::unordered_map<std::string, translator*> translators;
-
-	struct translator
-	{
-		using expression_translator = std::string(*)(
-			matl_internal::math::expression*
-			);
-		const expression_translator _expression_translator;
-
-		using variable_declaration_translator = std::string(*)(
-			std::string name,
-			matl_internal::typedefs::variable_definition* var
-			);
-		const variable_declaration_translator _variable_declaration_translator;
-
-		translator(
-			std::string _language_name,
-			expression_translator __expression_translator,
-			variable_declaration_translator __variable_declaration_translator
-		) : _expression_translator(__expression_translator),
-			_variable_declaration_translator(__variable_declaration_translator)
-		{
-			translators.insert({ _language_name, this });
-		};
-	};
 }
 
 //DOMAIN PARSING TYPES
@@ -901,6 +878,40 @@ namespace matl_internal
 		heterogeneous_map<std::string, typedefs::property_definition, hgm_solver> properties;
 
 		const domain::parsed_domain* domain = nullptr;
+	};
+}
+
+//TRANSLATOR
+namespace matl_translator
+{
+	struct translator;
+
+	std::unordered_map<std::string, translator*> translators;
+
+	struct translator
+	{
+		using expression_translator = std::string(*)(
+			const matl_internal::math::expression* const& exp,
+			const matl_internal::parsing_state& state
+			);
+		const expression_translator _expression_translator;
+
+		using variable_declaration_translator = std::string(*)(
+			const matl_internal::string_ref& name,
+			const matl_internal::typedefs::variable_definition* const& var,
+			const matl_internal::parsing_state& state
+			);
+		const variable_declaration_translator _variable_declaration_translator;
+
+		translator(
+			std::string _language_name,
+			expression_translator __expression_translator,
+			variable_declaration_translator __variable_declaration_translator
+		) : _expression_translator(__expression_translator),
+			_variable_declaration_translator(__variable_declaration_translator)
+		{
+			translators.insert({ _language_name, this });
+		};
 	};
 }
 
@@ -1248,7 +1259,7 @@ namespace matl_internal
 					if (itr == state.variables.end())
 						matl_throw(exception_type::unknown_token, { node_str });
 					
-					new_node->value.variable = &itr->second;
+					new_node->value.variable = &(*itr);
 
 					output.push_back(new_node);
 
@@ -1533,11 +1544,18 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			result.sources.push_back(""); 
 			break;
 		case directive_type::dump_property:
-			result.sources.back() += translator->_expression_translator(state.properties.at(directive.payload).definition);
+			result.sources.back() += translator->_expression_translator(
+				state.properties.at(directive.payload).definition,
+				state
+			);
 			break;
 		case directive_type::dump_variables:
 			for (auto& var : state.variables)
-				result.sources.back() += translator->_variable_declaration_translator(var.first, &var.second);
+				result.sources.back() += translator->_variable_declaration_translator(
+					var.first, 
+					&var.second,
+					state
+				);
 			break;
 		case directive_type::dump_functions:
 			//TODO
