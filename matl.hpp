@@ -22,7 +22,7 @@ namespace matl
 	struct parsed_material
 	{
 		bool success = false;
-		std::string source;
+		std::vector<std::string> sources;
 		std::vector<std::string> errors;
 		//Add Reflection
 	};
@@ -1435,7 +1435,29 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		matl_internal::get_to_new_line(material_source, state.iterator);
 	}
 
-	return {};
+	if (state.domain == nullptr)//|| state.errors.size() != 0)
+	{
+		return {}; //Error
+	}
+
+	parsed_material result;
+	result.sources = { "" };
+
+	for (auto& directive : state.domain->directives)
+	{
+		using directive_type = matl_internal::domain::directive_type;
+
+		switch (directive.type)
+		{
+		case directive_type::dump_block:
+			result.sources.back() += directive.payload;
+			break;
+		case directive_type::split:
+			result.sources.push_back("");
+		}
+	}
+
+	return std::move(result);
 }
 inline void matl_internal::parse_line(const std::string& material_source, context_implementation& context, parsing_state& state)
 {
