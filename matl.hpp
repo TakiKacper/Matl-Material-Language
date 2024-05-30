@@ -45,7 +45,6 @@ namespace matl
 		friend void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 	public:
-		void set_domain_request_callback(file_request_callback callback);
 		void set_library_request_callback(file_request_callback callback);
 
 	private:
@@ -71,6 +70,9 @@ namespace matl_internal
 		unexpected_end_of_line,
 		unknown_keyword,
 
+		domain_already_specified,
+		no_such_domain,
+
 		symbol_declaration,
 		invalid_syntax,
 
@@ -81,7 +83,11 @@ namespace matl_internal
 		cannot_use_directive_here,
 		end_of_directive_expected,
 		invalid_property_type,
-		invalid_dump_type
+		invalid_dump_type,
+
+		vector_too_long,
+		invalid_vector_component,
+		unknown_token
 	};
 
 	void matl_throw(exception_type type, std::vector<std::string>&& sub_errors);
@@ -128,6 +134,16 @@ namespace matl_internal
 			message = "Invalid property type"; break;
 		case matl_internal::exception_type::invalid_dump_type:
 			message = "Invalid dump type"; break;
+		case matl_internal::exception_type::vector_too_long:
+			message = "Vector can have up to 4 dimensions"; break;
+		case matl_internal::exception_type::invalid_vector_component:
+			message = "Invalid vector component"; break;
+		case matl_internal::exception_type::unknown_token:
+			message = "Unknown token"; break;
+		case matl_internal::exception_type::no_such_domain:
+			message = "No such domain"; break;
+		case matl_internal::exception_type::domain_already_specified:
+			message = "Domain has already been selected"; break;
 		}
 
 		for (auto& error : sub_errors)
@@ -204,13 +220,13 @@ namespace matl_internal
 	{
 	private:
 		using _record = std::pair<_key, _value>;
-		using _iterator = typename std::vector<_record>::iterator;
+		using _iterator = typename std::list<_record>::iterator;
 
-		std::vector<_record> records;
+		std::list<_record> records;
 
 	public:
 		heterogeneous_map() {};
-		heterogeneous_map(std::vector<_record> __records)
+		heterogeneous_map(std::list<_record> __records)
 			: records(std::move(__records)) {};
 
 		inline _iterator begin()
@@ -248,7 +264,7 @@ namespace matl_internal
 			if (itr == end())
 			{
 				records.push_back(std::move(record));
-				return records.end() - 1;
+				return --records.end();
 			}
 			else
 			{
@@ -364,6 +380,16 @@ namespace matl_internal
 //INTERNAL TYPES
 namespace matl_internal
 {
+	namespace typedefs
+	{
+		struct variable_definition;
+	}
+
+	namespace domain
+	{
+		struct symbol;
+	}
+
 	namespace math
 	{
 		struct data_type;
@@ -466,8 +492,8 @@ namespace matl_internal
 				union node_value
 				{
 					std::string						scalar_value;
-					std::string						variable_name;
-					std::string						symbol_name;
+					typedefs::variable_definition*	variable;
+					domain::symbol*					symbol;
 					const unary_operator*			unary_operator;
 					const binary_operator*			binary_operator;
 					uint8_t							vector_size;
@@ -607,14 +633,206 @@ namespace matl_internal
 		struct variable_definition
 		{
 			const math::data_type* return_type;
-			math::expression definition;
+			math::expression* definition;
+
+			~variable_definition()
+			{
+				delete definition;
+			}
 		};
 
 		struct property_definition
 		{
-			math::expression definition;
+			math::expression* definition;
+
+			~property_definition()
+			{
+				delete definition;
+			}
 		};
 	}
+}
+
+//DOMAIN PARSING TYPES
+namespace matl_internal
+{
+	namespace domain
+	{
+		enum class directive_type
+		{
+			dump_block,
+			dump_variables,
+			dump_functions,
+			dump_property,
+			split
+		};
+
+		struct directive
+		{
+			directive_type type;
+			std::string payload;
+			directive(directive_type _type, std::string _payload)
+				: type(std::move(_type)), payload(std::move(_payload)) {};
+		};
+
+		struct symbol
+		{
+			const math::data_type* type;
+			std::string definition;
+			symbol(const math::data_type* _type, std::string _definition)
+				: type(_type), definition(_definition) {};
+		};
+
+		struct parsed_domain
+		{
+			std::vector<directive> directives;
+
+			heterogeneous_map<std::string, const math::data_type*, hgm_solver> properties;
+			heterogeneous_map<std::string, symbol, hgm_solver> symbols;
+		};
+
+		struct parsing_state
+		{
+			size_t iterator = 0;
+			parsed_domain* domain;
+
+			bool expose_closure = false;
+		};
+
+		using directive_handle =
+			void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
+
+		namespace directive_handles
+		{
+			void expose(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				if (state.expose_closure == true)
+					matl_throw(exception_type::cannot_use_directive_here, { "expose" });
+
+				state.expose_closure = true;
+			}
+
+			void end(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				if (state.expose_closure == false)
+					matl_throw(exception_type::cannot_use_directive_here, { "end" });
+
+				state.expose_closure = false;
+			}
+
+			void property(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				if (state.expose_closure)
+				{
+					get_spaces(source, state.iterator);
+					auto type_name = get_string_ref(source, state.iterator);
+
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					auto type = get_data_type(type_name);
+					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
+
+					state.domain->properties.insert({ name, type });
+				}
+				else
+				{
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					state.domain->directives.push_back(
+						{ directive_type::dump_property, std::move(name) }
+					);
+				}
+			}
+
+			void symbol(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				if (state.expose_closure)
+				{
+					get_spaces(source, state.iterator);
+					auto type_name = get_string_ref(source, state.iterator);
+
+					auto type = get_data_type(type_name);
+					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
+
+					get_spaces(source, state.iterator);
+					auto name = get_string_ref(source, state.iterator);
+
+					get_spaces(source, state.iterator);
+					if (source.at(state.iterator) != '=')
+						matl_throw(exception_type::invalid_syntax, { "expected '='" });
+
+					state.iterator++;
+
+					if (source.at(state.iterator) == '>')
+						matl_throw(exception_type::invalid_syntax, { "expected symbol definition" });
+
+					size_t begin = state.iterator;
+					get_to_char('>', source, state.iterator);
+
+					state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)} });
+				}
+				else
+					matl_throw(exception_type::cannot_use_directive_here, { "symbol" });
+			}
+
+			void dump(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				get_spaces(source, state.iterator);
+				auto dump_what = get_string_ref(source, state.iterator);
+
+				if (dump_what == "variables")
+					state.domain->directives.push_back(
+						{ directive_type::dump_variables, {} }
+				);
+				else if (dump_what == "functions")
+					state.domain->directives.push_back(
+						{ directive_type::dump_functions, {} }
+				);
+				else
+					matl_throw(exception_type::invalid_dump_type, { dump_what });
+
+				get_to_char('>', source, state.iterator);
+			}
+
+			void split(const std::string& source, matl::context* context, parsing_state& state)
+			{
+				state.domain->directives.push_back(
+					{ directive_type::split, {} }
+				);
+			}
+		}
+
+		heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles =
+		{
+			{
+				{"expose",	 directive_handles::expose},
+				{"end",		 directive_handles::end},
+				{"property", directive_handles::property},
+				{"symbol",	 directive_handles::symbol},
+				{"dump",	 directive_handles::dump},
+				{"split",	 directive_handles::split}
+			}
+		};
+	}
+}
+
+//MATERIAL PARSING TYPES
+namespace matl_internal
+{
+	struct parsing_state
+	{
+		size_t iterator = 0;
+		int line_counter = 0;
+
+		//std::vector<int> errors;
+
+		heterogeneous_map<std::string, typedefs::variable_definition, hgm_solver> variables;
+		heterogeneous_map<std::string, typedefs::property_definition, hgm_solver> properties;
+
+		const domain::parsed_domain* domain = nullptr;
+	};
 }
 
 //EXPRESSIONS PARSING
@@ -750,7 +968,7 @@ namespace matl_internal
 		}
 
 		void insert_operator(
-			std::list<math::expression::node*>& operators_stack, 
+			std::list<math::expression::node*>& operators_stack,
 			std::list<math::expression::node*>& output,
 			math::expression::node* node
 		)
@@ -771,18 +989,207 @@ namespace matl_internal
 			}
 
 			operators_stack.push_back(node);
-		}
+		};
 
 		void shunting_yard(
+			parsing_state& state,
 			math::expression::node*& new_node,
 			std::list<math::expression::node*>& output,
 			std::list<math::expression::node*>& operators,
 			const std::string& source,
 			size_t& iterator
-		);
+		)
+		{
+			using node = math::expression::node;
+			using node_type = node::node_type;
+
+			std::string node_str;
+			bool accepts_right_unary_operator = true;
+
+			auto push_vector_or_parenthesis = [&]()
+			{
+				int comas = get_comas_inside_parenthesis(source, iterator - 1);
+
+				if (comas == 0)
+					new_node->type = node_type::single_arg_left_parenthesis;
+				else if (comas <= 3)
+				{
+					new_node->type = node_type::vector_contructor_operator;
+					new_node->value.vector_size = comas + 1;
+				}
+				else
+					matl_throw(exception_type::vector_too_long, {});
+
+				operators.push_back(new_node);
+			};
+
+			auto close_parenthesis = [&]()
+			{
+				bool found_left_parenthesis = false;
+				math::expression::node* previous = nullptr;
+
+				while (operators.size() != 0)
+				{
+					previous = operators.back();
+					if (is_any_of_left_parentheses(previous))
+					{
+						found_left_parenthesis = true;
+						break;
+					}
+
+					output.push_back(previous);
+					operators.pop_back();
+				}
+
+				if (!found_left_parenthesis)
+					matl_throw(exception_type::mismatched_parentheses, {});
+				else if (previous->type == node_type::single_arg_left_parenthesis)
+					operators.pop_back();
+				else
+				{
+					output.push_back(previous);
+					operators.pop_back();
+				}
+
+				delete new_node;
+			};
+
+			auto handle_comma = [&]()
+			{
+				while (operators.size() != 0)
+				{
+					auto previous = operators.back();
+					if (is_any_of_left_parentheses(previous))
+						break;
+					output.push_back(previous);
+					operators.pop_back();
+				}
+			};
+
+			get_spaces(source, iterator);
+			while (!is_at_line_end(source, iterator))
+			{
+				node_str = get_node_str(source, iterator);
+				new_node = new node{};
+
+				if (is_unary_operator(node_str) && accepts_right_unary_operator)
+				{
+					new_node->type = node_type::unary_operator;
+					new_node->value.unary_operator = get_unary_operator(node_str.at(0));
+
+					insert_operator(operators, output, new_node);
+
+					accepts_right_unary_operator = false;
+				}
+				else if (is_binary_operator(node_str))
+				{
+					new_node->type = node_type::binary_operator;
+					new_node->value.binary_operator = get_binary_operator(node_str.at(0));
+
+					insert_operator(operators, output, new_node);
+
+					accepts_right_unary_operator = true;
+				}
+				else if (node_str[0] == '(')
+				{
+					push_vector_or_parenthesis();
+					accepts_right_unary_operator = true;
+				}
+				else if (node_str[0] == ')')
+				{
+					close_parenthesis();
+					accepts_right_unary_operator = false;
+				}
+				else if (node_str[0] == ',')
+				{
+					handle_comma();
+					accepts_right_unary_operator = true;
+				}
+				else if (node_str[0] == '.')
+				{
+					new_node->type = node_type::vector_component_access;
+
+					get_spaces(source, iterator);
+					auto components = get_string_ref(source, iterator);
+
+					if (components.size() > 4)
+						matl_throw(exception_type::vector_too_long, {});
+
+					for (size_t i = 0; i < components.size(); i++)
+					{
+						auto itr = builtins::vector_components_names.find(components.at(i));
+						if (itr == builtins::vector_components_names.end())
+							matl_throw(exception_type::invalid_vector_component, { components, std::string{components.at(i)}});
+						new_node->value.included_vector_components.push_back(itr->second);
+					}
+
+					accepts_right_unary_operator = false;
+					operators.push_back(new_node);
+				}
+				else if (is_function_call(source, iterator))
+				{
+					int args_ammount = get_comas_inside_parenthesis(source, iterator - 1);
+
+					if (args_ammount != 0)
+						args_ammount++;
+
+					new_node->type = node_type::function;
+					new_node->value.function_name_and_passed_args = {
+						std::move(node_str),
+						args_ammount
+					};
+
+					insert_operator(operators, output, new_node);
+					iterator++;	//Jump over the ( char
+
+					accepts_right_unary_operator = true;
+				}
+				else if (is_scalar_literal(node_str))
+				{
+					new_node->type = node_type::scalar_literal;
+					new_node->value.scalar_value = node_str;
+					output.push_back(new_node);
+
+					accepts_right_unary_operator = false;
+				}
+				else if (node_str.at(0) == builtins::symbols_prefix)
+				{
+					/*new_node->type = node_type::symbol;
+					//new_node->value.symbol_name = std::move(node_str.substr(1));
+					output.push_back(new_node);
+
+					accepts_right_unary_operator = false;*/
+					matl_throw(exception_type::unknown_token, { node_str });
+				}
+				else
+				{
+					new_node->type = node_type::variable;
+
+					auto itr = state.variables.find(node_str);
+					if (itr == state.variables.end())
+						matl_throw(exception_type::unknown_token, { node_str });
+					
+					new_node->value.variable = &itr->second;
+
+					output.push_back(new_node);
+
+					accepts_right_unary_operator = false;
+				}
+
+				get_spaces(source, iterator);
+			}
+
+			//Push all binary_operators left on the binary_operators stack to the output
+			auto itr = operators.rbegin();
+			while (itr != operators.rend())
+			{
+				output.push_back(*itr);
+				itr++;
+			}
+		}
 	}
 
-	math::expression get_expression(const std::string& source, size_t& iterator)
+	math::expression* get_expression(const std::string& source, size_t& iterator, parsing_state& state)
 	{
 		math::expression::node* new_node = nullptr;
 
@@ -791,7 +1198,7 @@ namespace matl_internal
 
 		try
 		{
-			//expressions_parsing_internal::shunting_yard(new_node, output, operators, source, iterator);
+			expressions_parsing_internal::shunting_yard(state, new_node, output, operators, source, iterator);
 		}
 		catch (const matl_exception& exc)
 		{
@@ -806,12 +1213,12 @@ namespace matl_internal
 			throw exc;
 		}
 
-		math::expression exp;
-		exp.nodes = std::move(output);
+		auto* exp = new math::expression;
+		exp->nodes = std::move(output);
 		return exp;
 	}
 
-	const math::data_type* validate_expression(const math::expression& exp)
+	const math::data_type* validate_expression(const math::expression* exp)
 	{
 		return nullptr;
 	}
@@ -829,7 +1236,6 @@ namespace matl
 {
 	struct context::implementation
 	{
-		file_request_callback domain_rc = nullptr;
 		file_request_callback library_rc = nullptr;
 
 		matl_internal::heterogeneous_map<
@@ -843,169 +1249,6 @@ namespace matl
 }
 
 //DOMAIN PARSING
-namespace matl_internal
-{
-	namespace domain
-	{
-		enum class directive_type
-		{
-			dump_block,
-			dump_variables,
-			dump_functions,
-			dump_property,
-			split
-		};
-
-		struct directive
-		{
-			directive_type type;
-			std::string payload;
-			directive(directive_type _type, std::string _payload)
-				: type(std::move(_type)), payload(std::move(_payload)) {};
-		};
-
-		struct symbol
-		{
-			const math::data_type* type;
-			std::string definition;
-			symbol(const math::data_type* _type, std::string _definition)
-				: type(_type), definition(_definition) {};
-		};
-
-		struct parsed_domain
-		{
-			std::vector<directive> directives;
-
-			heterogeneous_map<std::string, const math::data_type*, hgm_solver> properties;
-			heterogeneous_map<std::string, symbol, hgm_solver> symbols;
-		};
-
-		struct parsing_state
-		{
-			size_t iterator = 0;
-			parsed_domain* domain;
-
-			bool expose_closure = false;
-		};
-
-		using directive_handle = 
-			void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
-
-		namespace directive_handles
-		{
-			void expose(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				if (state.expose_closure == true) 
-					matl_throw(exception_type::cannot_use_directive_here, {"expose"});
-
-				state.expose_closure = true;
-			}
-
-			void end(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				if (state.expose_closure == false)  
-					matl_throw(exception_type::cannot_use_directive_here, { "end" });
-
-				state.expose_closure = false;
-			}
-
-			void property(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				if (state.expose_closure)
-				{
-					get_spaces(source, state.iterator);
-					auto type_name = get_string_ref(source, state.iterator);
-
-					get_spaces(source, state.iterator);
-					auto name = get_string_ref(source, state.iterator);
-
-					auto type = get_data_type(type_name);
-					if (type == nullptr) matl_throw(exception_type::invalid_property_type, {type_name});
-
-					state.domain->properties.insert({ name, type });
-				}
-				else
-				{
-					get_spaces(source, state.iterator);
-					auto name = get_string_ref(source, state.iterator);
-
-					state.domain->directives.push_back(
-						{ directive_type::dump_property, std::move(name) }
-					);
-				}
-			}
-
-			void symbol(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				if (state.expose_closure)
-				{
-					get_spaces(source, state.iterator);
-					auto type_name = get_string_ref(source, state.iterator);
-
-					auto type = get_data_type(type_name);
-					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
-
-					get_spaces(source, state.iterator);
-					auto name = get_string_ref(source, state.iterator);
-
-					get_spaces(source, state.iterator);
-					if (source.at(state.iterator) != '=')
-						matl_throw(exception_type::invalid_syntax, { "expected '='" });
-
-					state.iterator++;
-
-					if (source.at(state.iterator) == '>')
-						matl_throw(exception_type::invalid_syntax, { "expected symbol definition" });
-
-					size_t begin = state.iterator;
-					get_to_char('>', source, state.iterator);
-
-					state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)}});
-				}
-				else
-					matl_throw(exception_type::cannot_use_directive_here, { "symbol" });
-			}
-
-			void dump(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				get_spaces(source, state.iterator);
-				auto dump_what = get_string_ref(source, state.iterator);
-
-				if (dump_what == "variables")
-					state.domain->directives.push_back(
-						{ directive_type::dump_variables, {} }
-					);
-				else if (dump_what == "functions")
-					state.domain->directives.push_back(
-						{ directive_type::dump_functions, {} }
-					);
-				else
-					matl_throw(exception_type::invalid_dump_type, { dump_what });
-
-				get_to_char('>', source, state.iterator);
-			}
-
-			void split(const std::string& source, matl::context* context, parsing_state& state)
-			{
-				state.domain->directives.push_back(
-					{ directive_type::split, {} }
-				);
-			}
-		}
-
-		heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles =
-		{
-			{
-				{"expose",	 directive_handles::expose},
-				{"end",		 directive_handles::end},
-				{"property", directive_handles::property},
-				{"symbol",	 directive_handles::symbol},
-				{"dump",	 directive_handles::dump},
-				{"split",	 directive_handles::split}
-			}
-		};
-	}
-}
 void matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context)
 {
 	matl_internal::domain::parsing_state state;
@@ -1065,17 +1308,6 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 //MATERIAL PARSING
 namespace matl_internal
 {
-	struct parsing_state
-	{
-		size_t iterator = 0;
-		int line_counter = 0;
-
-		//std::vector<int> errors;
-
-		heterogeneous_map<std::string, typedefs::variable_definition, hgm_solver> variables;
-		heterogeneous_map<std::string, typedefs::property_definition, hgm_solver> properties;
-	};
-
 	void parse_line(const std::string& material_source, matl::context* context, parsing_state& state);
 
 	using keyword_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
@@ -1098,23 +1330,46 @@ namespace matl_internal
 			if (assign_operator != '=')
 				matl_throw(exception_type::invalid_syntax, {});
 
-			auto exp = get_expression(source, iterator);
-
-			typedefs::variable_definition var_def;
+			auto& var_def = state.variables.insert({ var_name, {} })->second;
+			var_def.definition = get_expression(source, iterator, state);
 			var_def.return_type = validate_expression(var_def.definition);
-			var_def.definition = std::move(exp);
-
-			state.variables.insert({ var_name, std::move(var_def) });
 		}
 
 		void property(const std::string& source, matl::context* context, parsing_state& state)
 		{
+			auto& iterator = state.iterator;
 
+			get_spaces(source, iterator);
+			auto property_name = get_string_ref(source, iterator);
+
+			get_spaces(source, iterator);
+			auto assign_operator = get_char(source, iterator);
+
+			if (assign_operator != '=')
+				matl_throw(exception_type::invalid_syntax, {});
+
+			auto& prop = state.properties.insert({ property_name, {} })->second;
+			prop.definition = get_expression(source, iterator, state);;
 		}
 
 		void _using(const std::string& source, matl::context* context, parsing_state& state)
 		{
+			auto& iterator = state.iterator;
 
+			get_spaces(source, iterator);
+			auto target = get_string_ref(source, iterator);
+
+			if (target == "domain")
+			{
+				if (state.domain != nullptr)
+					matl_throw(exception_type::domain_already_specified, {});
+
+
+			}
+			else
+			{
+				//Call custom
+			}
 		}
 
 		void func(const std::string& source, matl::context* context, parsing_state& state)
@@ -1244,11 +1499,6 @@ namespace matl
 	{
 		delete context;
 		context = nullptr;
-	}
-
-	void context::set_domain_request_callback(file_request_callback callback)
-	{
-		impl->domain_rc = callback;
 	}
 
 	void context::set_library_request_callback(file_request_callback callback)
