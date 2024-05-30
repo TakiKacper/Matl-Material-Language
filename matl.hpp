@@ -42,6 +42,7 @@ namespace matl
 	private:
 		struct implementation;
 		implementation* impl;
+		friend parsed_material parse_material(const std::string& material_source, matl::context* context);
 		friend void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 	public:
@@ -367,6 +368,16 @@ namespace matl_internal
 			matl_throw(exception_type::unexpected_end_of_line, {});
 
 		return string_ref(source, begin, iterator);
+	}
+
+	inline string_ref get_rest_of_line(const std::string& source, size_t& iterator)
+	{
+		size_t begin = iterator;
+
+		while (!is_at_line_end(source, iterator))
+			iterator++;
+		
+		return { source, begin, iterator };
 	}
 
 	inline void get_to_new_line(const std::string& source, size_t& iterator)
@@ -1231,12 +1242,10 @@ namespace matl_internal
 	{
 		struct parsed_domain;
 	}
-}
-namespace matl
-{
-	struct context::implementation
+
+	struct context_implementation
 	{
-		file_request_callback library_rc = nullptr;
+		matl::file_request_callback library_rc = nullptr;
 
 		matl_internal::heterogeneous_map<
 			std::string,
@@ -1244,7 +1253,15 @@ namespace matl
 			matl_internal::hgm_solver
 		> domains;
 
-		~implementation();
+		~context_implementation();
+	};
+
+}
+namespace matl
+{
+	struct context::implementation
+	{
+		matl_internal::context_implementation impl;
 	};
 }
 
@@ -1302,19 +1319,19 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 		last_position = iterator;
 	}
 	
-	context->impl->domains.insert({ domain_name, state.domain });
+	context->impl->impl.domains.insert({ domain_name, state.domain });
 }
 
 //MATERIAL PARSING
 namespace matl_internal
 {
-	void parse_line(const std::string& material_source, matl::context* context, parsing_state& state);
+	void parse_line(const std::string& material_source, context_implementation& context, parsing_state& state);
 
-	using keyword_handle = void(*)(const std::string& material_source, matl::context* context, parsing_state& state);
+	using keyword_handle = void(*)(const std::string& material_source, context_implementation& context, parsing_state& state);
 
 	namespace matl_keywords
 	{
-		void let(const std::string& source, matl::context* context, parsing_state& state)
+		void let(const std::string& source, context_implementation& context, parsing_state& state)
 		{
 			auto& iterator = state.iterator;
 
@@ -1335,7 +1352,7 @@ namespace matl_internal
 			var_def.return_type = validate_expression(var_def.definition);
 		}
 
-		void property(const std::string& source, matl::context* context, parsing_state& state)
+		void property(const std::string& source, context_implementation& context, parsing_state& state)
 		{
 			auto& iterator = state.iterator;
 
@@ -1352,7 +1369,7 @@ namespace matl_internal
 			prop.definition = get_expression(source, iterator, state);;
 		}
 
-		void _using(const std::string& source, matl::context* context, parsing_state& state)
+		void _using(const std::string& source, context_implementation& context, parsing_state& state)
 		{
 			auto& iterator = state.iterator;
 
@@ -1361,10 +1378,17 @@ namespace matl_internal
 
 			if (target == "domain")
 			{
+				get_spaces(source, iterator);
+				auto domain_name = get_rest_of_line(source, iterator);
+
 				if (state.domain != nullptr)
 					matl_throw(exception_type::domain_already_specified, {});
 
+				auto itr = context.domains.find(domain_name);
+				if (itr == context.domains.end())
+					matl_throw(exception_type::no_such_domain, { target });
 
+				state.domain = itr->second;
 			}
 			else
 			{
@@ -1372,12 +1396,12 @@ namespace matl_internal
 			}
 		}
 
-		void func(const std::string& source, matl::context* context, parsing_state& state)
+		void func(const std::string& source, context_implementation& context, parsing_state& state)
 		{
 
 		}
 
-		void _return(const std::string& source, matl::context* context, parsing_state& state)
+		void _return(const std::string& source, context_implementation& context, parsing_state& state)
 		{
 
 		}
@@ -1405,7 +1429,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	while (!matl_internal::is_at_source_end(material_source, state.iterator))
 	{
-		matl_internal::parse_line(material_source, context, state);
+		matl_internal::parse_line(material_source, context->impl->impl, state);
 
 		if (matl_internal::is_at_source_end(material_source, state.iterator)) break;
 		matl_internal::get_to_new_line(material_source, state.iterator);
@@ -1413,7 +1437,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	return {};
 }
-inline void matl_internal::parse_line(const std::string& material_source, matl::context* context, parsing_state& state)
+inline void matl_internal::parse_line(const std::string& material_source, context_implementation& context, parsing_state& state)
 {
 	auto& source = material_source;
 	auto& iterator = state.iterator;
@@ -1472,14 +1496,17 @@ std::string matl::get_language_version()
 }
 
 //CONTEXT IMPLEMENTATION
-namespace matl
+namespace matl_internal
 {
-	context::implementation::~implementation()
+	context_implementation::~context_implementation()
 	{
 		for (auto& x : domains)
 			delete x.second;
 	}
+}
 
+namespace matl
+{
 	context::context()
 	{
 		impl = new implementation;
@@ -1503,7 +1530,7 @@ namespace matl
 
 	void context::set_library_request_callback(file_request_callback callback)
 	{
-		impl->library_rc = callback;
+		impl->impl.library_rc = callback;
 	}
 }
 
