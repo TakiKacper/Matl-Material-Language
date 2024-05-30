@@ -668,6 +668,37 @@ namespace matl_internal
 		const char symbols_prefix = '$';
 
 		const uint8_t functions_precedence = 3;
+
+		bool is_vector(const math::data_type* type)
+		{
+			if (type == get_data_type({ "vector2" })) return true;
+			if (type == get_data_type({ "vector3" })) return true;
+			if (type == get_data_type({ "vector4" })) return true;
+
+			return false;
+		}
+
+		uint8_t get_vector_size(const math::data_type* type)
+		{
+			if (type == get_data_type({ "vector2" })) return 2;
+			if (type == get_data_type({ "vector3" })) return 3;
+			if (type == get_data_type({ "vector4" })) return 4;
+
+			return 0;
+		}
+
+		const math::data_type* get_vector_type_of_size(uint8_t type)
+		{
+			switch (type)
+			{
+			case 1: return get_data_type({ "scalar" });
+			case 2: return get_data_type({ "vector2" });
+			case 3: return get_data_type({ "vector3" });
+			case 4: return get_data_type({ "vector4" });
+			}
+
+			return nullptr;
+		}	
 	}
 }
 
@@ -1308,9 +1339,221 @@ namespace matl_internal
 		return exp;
 	}
 
-	const math::data_type* validate_expression(const math::expression* exp)
+	const math::data_type* validate_expression(const math::expression* exp, const parsing_state& state)
 	{
-		return nullptr;
+		using node = math::expression::node;
+		using data_type = math::data_type;
+
+		std::vector<const data_type*> types;
+
+		auto get_type = [&](size_t index_from_end) -> const data_type* const&
+		{
+			return types.at(types.size() - 1 - index_from_end);
+		};
+
+		auto pop_types = [&](size_t ammount)
+		{
+			types.erase(types.end() - ammount, types.end());
+		};
+
+		auto handle_binary_operator = [&](const math::binary_operator* op)
+		{
+			auto left = get_type(1);
+			auto right = get_type(0);
+
+			for (auto& at : op->allowed_types)
+			{
+				if (at.left_operand_type == left && at.right_operand_type == right)
+				{
+					pop_types(2);
+					types.push_back(at.returned_type);
+					return;
+				}
+			}
+			matl_throw(exception_type::unknown_token, {});
+			//error_text = "Cannot " + op->operation_display_name + " types: left: " + left->name + " right: " + right->name;
+		};
+
+		auto handle_unary_operator = [&](const math::unary_operator* op)
+		{
+			auto operand = get_type(0);
+
+			for (auto& at : op->allowed_types)
+			{
+				if (at.operand_type == operand)
+				{
+					pop_types(1);
+					types.push_back(at.returned_type);
+					return;
+				}
+			}
+			matl_throw(exception_type::unknown_token, {});
+			//error_text = "Cannot " + op->operation_display_name + " type: " + operand->name;
+		};
+
+		for (auto& n : exp->nodes)
+		{
+			switch (n->type)
+			{
+			case node::node_type::scalar_literal:
+				types.push_back(builtins::scalar_data_type); break;
+			case node::node_type::variable:
+			{
+				auto& var = n->value.variable;
+				types.push_back(var->second.return_type);
+				break;
+			}
+			case node::node_type::symbol:
+			{
+				if (state.domain == nullptr)
+				{
+					matl_throw(exception_type::unknown_token, {});
+					//error_text = "Symbols cannot be used here";
+					break;
+				}
+
+				types.push_back(n->value.symbol->type);
+				break;
+			}
+			case node::node_type::binary_operator:
+				handle_binary_operator(n->value.binary_operator); break;
+			case node::node_type::unary_operator:
+				handle_unary_operator(n->value.unary_operator); break;
+			case node::node_type::vector_component_access:
+			{
+				auto& type = get_type(0);
+
+				if (!builtins::is_vector(type))
+					matl_throw(exception_type::unknown_token, {});
+					//error_text = "Cannot swizzle not-vector type";
+				else
+				{
+					size_t vec_size = builtins::get_vector_size(type);
+
+					for (auto& comp : n->value.included_vector_components)
+						if (comp > vec_size)
+							matl_throw(exception_type::unknown_token, {});
+							//error_text = type->name + " does not have " + std::to_string(comp) + " dimensions";
+
+					size_t new_vec_size = n->value.included_vector_components.size();
+
+					pop_types(1);
+					types.push_back(builtins::get_vector_type_of_size(static_cast<uint8_t>(new_vec_size)));
+				}
+
+				break;
+			}
+			case node::node_type::vector_contructor_operator:
+			{
+				for (int i = 0; i < n->value.vector_size; i++)
+				{
+					auto& type = get_type(i);
+					if (type != builtins::scalar_data_type)
+						matl_throw(exception_type::unknown_token, {});
+						//error_text = "Created vector must consist of scalars only";
+				}
+
+				pop_types(n->value.vector_size);
+				types.push_back(builtins::get_vector_type_of_size(n->value.vector_size));
+				break;
+			}
+			case node::node_type::function:
+			{
+				/*const auto& func_name = n->value.function_name_and_passed_args.first;
+
+				function_definition* func_def = nullptr;
+				for (auto& func_coll : functions)
+				{
+					auto itr = func_coll->find(func_name);
+					if (itr != func_coll->end())
+					{
+						func_def = &itr->second;
+						break;
+					}
+				}
+
+				if (func_def == nullptr)
+				{
+					error_text = "No such function: " + func_name;
+					break;
+				}
+
+				if (n->value.function_name_and_passed_args.second != func_def->arguments.size())
+				{
+					error_text = "Function " + func_name
+						+ " takes " + std::to_string(func_def->arguments.size())
+						+ " arguments, not " + std::to_string(n->value.function_name_and_passed_args.second);
+					break;
+				}
+
+				std::vector<const data_type*> arguments_types;
+
+				for (size_t i = 0; i < func_def->arguments.size(); i++)
+					arguments_types.push_back(get_type(i));
+
+				auto invalid_arguments_error = [&]()
+				{
+					error_text = "Function " + func_name + " is invalid for arguments: ";
+					for (size_t i = arguments_types.size() - 1; i != -1; i--)
+					{
+						error_text += arguments_types.at(i)->name;
+						if (i != 0) error_text += ", ";
+					}
+				};
+
+				for (auto& func_instance : func_def->instances)
+				{
+					if (func_instance.match_args(arguments_types))
+					{
+						if (func_instance.valid)
+						{
+							pop_types(func_def->arguments.size());
+							types.push_back(func_instance.returned_type);
+							goto end_of_function_check;
+						}
+
+						invalid_arguments_error();
+						break;
+					}
+				}
+
+				{
+					std::vector<std::string> instantiating_errors;
+
+					auto& func_instance = instantiate_function(
+						func_def,
+						arguments_types,
+						variables,
+						functions,
+						instantiating_errors
+					);
+
+					if (func_instance.valid)
+					{
+						pop_types(func_def->arguments.size());
+						types.push_back(func_instance.returned_type);
+						break;
+					}
+
+					invalid_arguments_error();
+
+					for (auto& error : instantiating_errors)
+					{
+						error_text += "\n\t";
+						error_text += error;
+					}
+				}
+
+			end_of_function_check:
+				break;*/
+			}
+			}
+
+			//if (error_text.size() != 0)
+			//	return false;
+		}
+
+		return types.back();
 	}
 }
 
@@ -1435,7 +1678,7 @@ namespace matl_internal
 
 			auto& var_def = state.variables.insert({ var_name, {} })->second;
 			var_def.definition = get_expression(source, iterator, state);
-			var_def.return_type = validate_expression(var_def.definition);
+			var_def.return_type = validate_expression(var_def.definition, state);
 		}
 
 		void property(const std::string& source, context_implementation& context, parsing_state& state)
