@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 
 //DEFINE MATL_IMPLEMENTATION
@@ -31,7 +32,7 @@ namespace matl
 
 	class context;
 
-	context* create_context();
+	context* create_context(std::string target_language);
 	void destroy_context(context*&);
 
 	parsed_material parse_material(const std::string& material_source, matl::context* context);
@@ -52,7 +53,7 @@ namespace matl
 		context();
 		~context();
 
-		friend context* matl::create_context();
+		friend context* matl::create_context(std::string target_language);
 		friend void matl::destroy_context(matl::context*& context);
 	};
 }
@@ -73,6 +74,7 @@ namespace matl_internal
 
 		domain_already_specified,
 		no_such_domain,
+		cannot_use_symbol_since_no_domain,
 
 		symbol_declaration,
 		invalid_syntax,
@@ -88,7 +90,9 @@ namespace matl_internal
 
 		vector_too_long,
 		invalid_vector_component,
-		unknown_token
+		unknown_token,
+
+		no_such_symbol
 	};
 
 	void matl_throw(exception_type type, std::vector<std::string>&& sub_errors);
@@ -145,6 +149,8 @@ namespace matl_internal
 			message = "No such domain"; break;
 		case matl_internal::exception_type::domain_already_specified:
 			message = "Domain has already been selected"; break;
+		case matl_internal::exception_type::cannot_use_symbol_since_no_domain:
+			message = "Cannot use symbols since the domain is not specified yet"; break; 
 		}
 
 		for (auto& error : sub_errors)
@@ -222,6 +228,7 @@ namespace matl_internal
 	private:
 		using _record = std::pair<_key, _value>;
 		using _iterator = typename std::list<_record>::iterator;
+		using _const_iterator = typename std::list<_record>::const_iterator;
 
 		std::list<_record> records;
 
@@ -240,6 +247,16 @@ namespace matl_internal
 			return records.end();
 		}
 
+		inline _const_iterator begin() const
+		{
+			return records.begin();
+		}
+
+		inline _const_iterator end() const
+		{
+			return records.end();
+		}
+
 		template<class _key2>
 		inline _value& at(const _key2& key)
 		{
@@ -253,6 +270,15 @@ namespace matl_internal
 		inline _iterator find(const _key2& key)
 		{
 			for (_iterator itr = begin(); itr != end(); itr++)
+				if (_equality_solver::equal(itr->first, key))
+					return itr;
+			return end();
+		}
+
+		template<class _key2>
+		inline _const_iterator find(const _key2& key) const
+		{
+			for (_const_iterator itr = begin(); itr != end(); itr++)
 				if (_equality_solver::equal(itr->first, key))
 					return itr;
 			return end();
@@ -502,14 +528,14 @@ namespace matl_internal
 
 				union node_value
 				{
-					std::string						scalar_value;
-					typedefs::variable_definition*	variable;
-					domain::symbol*					symbol;
-					const unary_operator*			unary_operator;
-					const binary_operator*			binary_operator;
-					uint8_t							vector_size;
-					std::vector<uint8_t>			included_vector_components;
-					std::pair<std::string, int>		function_name_and_passed_args;
+					std::string								scalar_value;
+					const typedefs::variable_definition*	variable;
+					const domain::symbol*					symbol;
+					const unary_operator*					unary_operator;
+					const binary_operator*					binary_operator;
+					uint8_t									vector_size;
+					std::vector<uint8_t>					included_vector_components;
+					std::pair<std::string, int>				function_name_and_passed_args;
 					~node_value() {};
 				} value;
 			};
@@ -662,6 +688,38 @@ namespace matl_internal
 			}
 		};
 	}
+}
+
+//TRANSLATOR
+namespace matl_translator
+{
+	struct translator;
+
+	std::unordered_map<std::string, translator*> translators;
+
+	struct translator
+	{
+		using expression_translator = std::string(*)(
+			matl_internal::math::expression*
+			);
+		const expression_translator _expression_translator;
+
+		using variable_declaration_translator = std::string(*)(
+			std::string name,
+			matl_internal::typedefs::variable_definition* var
+			);
+		const variable_declaration_translator _variable_declaration_translator;
+
+		translator(
+			std::string _language_name,
+			expression_translator __expression_translator,
+			variable_declaration_translator __variable_declaration_translator
+		) : _expression_translator(__expression_translator),
+			_variable_declaration_translator(__variable_declaration_translator)
+		{
+			translators.insert({ _language_name, this });
+		};
+	};
 }
 
 //DOMAIN PARSING TYPES
@@ -1014,7 +1072,6 @@ namespace matl_internal
 			using node = math::expression::node;
 			using node_type = node::node_type;
 
-			std::string node_str;
 			bool accepts_right_unary_operator = true;
 
 			auto push_vector_or_parenthesis = [&]()
@@ -1080,7 +1137,7 @@ namespace matl_internal
 			get_spaces(source, iterator);
 			while (!is_at_line_end(source, iterator))
 			{
-				node_str = get_node_str(source, iterator);
+				auto node_str = get_node_str(source, iterator);
 				new_node = new node{};
 
 				if (is_unary_operator(node_str) && accepts_right_unary_operator)
@@ -1101,22 +1158,22 @@ namespace matl_internal
 
 					accepts_right_unary_operator = true;
 				}
-				else if (node_str[0] == '(')
+				else if (node_str.at(0) == '(')
 				{
 					push_vector_or_parenthesis();
 					accepts_right_unary_operator = true;
 				}
-				else if (node_str[0] == ')')
+				else if (node_str.at(0) == ')')
 				{
 					close_parenthesis();
 					accepts_right_unary_operator = false;
 				}
-				else if (node_str[0] == ',')
+				else if (node_str.at(0) == ',')
 				{
 					handle_comma();
 					accepts_right_unary_operator = true;
 				}
-				else if (node_str[0] == '.')
+				else if (node_str.at(0) == '.')
 				{
 					new_node->type = node_type::vector_component_access;
 
@@ -1165,11 +1222,22 @@ namespace matl_internal
 				}
 				else if (node_str.at(0) == builtins::symbols_prefix)
 				{
-					/*new_node->type = node_type::symbol;
-					//new_node->value.symbol_name = std::move(node_str.substr(1));
+					new_node->type = node_type::symbol;
+
+					if (state.domain == nullptr)
+						matl_throw(exception_type::cannot_use_symbol_since_no_domain, {});
+
+					node_str.begin++;
+
+					auto itr = state.domain->symbols.find(node_str);
+
+					if (itr == state.domain->symbols.end())
+						matl_throw(exception_type::no_such_symbol, { node_str });
+				
+					new_node->value.symbol = &(itr->second);
 					output.push_back(new_node);
 
-					accepts_right_unary_operator = false;*/
+					accepts_right_unary_operator = false;
 					matl_throw(exception_type::unknown_token, { node_str });
 				}
 				else
@@ -1236,6 +1304,11 @@ namespace matl_internal
 }
 
 //CONTEXT MEMBERS IMPLEMENTATION
+namespace matl_translator
+{
+	struct translator;
+}
+
 namespace matl_internal
 {
 	namespace domain
@@ -1252,6 +1325,8 @@ namespace matl_internal
 			matl_internal::domain::parsed_domain*,
 			matl_internal::hgm_solver
 		> domains;
+
+		matl_translator::translator* translator;
 
 		~context_implementation();
 	};
@@ -1443,6 +1518,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	parsed_material result;
 	result.sources = { "" };
 
+	auto& translator = context->impl->impl.translator;
+
 	for (auto& directive : state.domain->directives)
 	{
 		using directive_type = matl_internal::domain::directive_type;
@@ -1450,10 +1527,21 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		switch (directive.type)
 		{
 		case directive_type::dump_block:
-			result.sources.back() += directive.payload;
+			result.sources.back() += directive.payload; 
 			break;
 		case directive_type::split:
-			result.sources.push_back("");
+			result.sources.push_back(""); 
+			break;
+		case directive_type::dump_property:
+			result.sources.back() += translator->_expression_translator(state.properties.at(directive.payload).definition);
+			break;
+		case directive_type::dump_variables:
+			for (auto& var : state.variables)
+				result.sources.back() += translator->_variable_declaration_translator(var.first, &var.second);
+			break;
+		case directive_type::dump_functions:
+			//TODO
+			break;
 		}
 	}
 
@@ -1474,10 +1562,7 @@ inline void matl_internal::parse_line(const std::string& material_source, contex
 	auto kh_itr = keywords_handles.find(keyword);
 
 	if (kh_itr == keywords_handles.end())
-	{
-		//Error
-		return;
-	}
+		matl_throw(exception_type::unknown_keyword, { keyword });
 	
 	kh_itr->second(material_source, context, state);
 }
@@ -1539,9 +1624,17 @@ namespace matl
 		delete impl;
 	}
 
-	context* create_context()
+	context* create_context(std::string target_language)
 	{
-		return new context;
+		auto itr = matl_translator::translators.find(target_language);
+		if (itr == matl_translator::translators.end())
+		{
+			return nullptr;
+		}
+
+		auto c = new context;
+		c->impl->impl.translator = itr->second;
+		return c;
 	}
 
 	void destroy_context(context*& context)
