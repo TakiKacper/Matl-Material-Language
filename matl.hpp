@@ -67,97 +67,27 @@ namespace matl
 //MATL EXCEPTION
 namespace matl_internal
 {
-	enum class exception_type
-	{
-		unexpected_end_of_line,
-		unknown_keyword,
-
-		domain_already_specified,
-		no_such_domain,
-		cannot_use_symbol_since_no_domain,
-
-		symbol_declaration,
-		invalid_syntax,
-
-		invalid_scalar_literal,
-		mismatched_parentheses,
-
-		invalid_directive,
-		cannot_use_directive_here,
-		end_of_directive_expected,
-		invalid_property_type,
-		invalid_dump_type,
-
-		vector_too_long,
-		invalid_vector_component,
-		unknown_token,
-
-		no_such_symbol
-	};
-
-	void matl_throw(exception_type type, std::vector<std::string>&& sub_errors);
-
 	class matl_exception : public std::exception
 	{
-	friend void matl_throw(exception_type type, std::vector<std::string>&& sub_errors);
+	friend void matl_throw(std::string error);
 
 	private:
-		std::string message;
-		matl_exception() : std::exception{""} {};
+		matl_exception() : std::exception{ "" } {};
+
 	public:
+		size_t line_override = 0;
+		std::string message;		
 		const char* what() const override
 		{
 			return message.c_str();
 		}
 	};
 
-	void matl_throw(exception_type type, std::vector<std::string>&& sub_errors)
+	[[ noreturn ]]
+	void matl_throw(std::string error)
 	{
-		std::string message;
-
-		switch (type)
-		{
-		case matl_internal::exception_type::unexpected_end_of_line:
-			message = "Unexpected end of line"; break;
-		case matl_internal::exception_type::unknown_keyword:
-			message = "Unknown keyword"; break;
-		case matl_internal::exception_type::symbol_declaration:
-			message = "Symbols cannot be declared in material"; break;
-		case matl_internal::exception_type::invalid_syntax:
-			message = "Invalid syntax"; break;
-		case matl_internal::exception_type::invalid_scalar_literal:
-			message = "Invalid scalar literal"; break;
-		case matl_internal::exception_type::mismatched_parentheses:
-			message = "Mismatched parentheses"; break;
-		case matl_internal::exception_type::invalid_directive:
-			message = "No such directive"; break;
-		case matl_internal::exception_type::cannot_use_directive_here:
-			message = "Cannot use this directive here"; break;
-		case matl_internal::exception_type::end_of_directive_expected:
-			message = "Expected end of directive"; break;
-		case matl_internal::exception_type::invalid_property_type:
-			message = "Invalid property type"; break;
-		case matl_internal::exception_type::invalid_dump_type:
-			message = "Invalid dump type"; break;
-		case matl_internal::exception_type::vector_too_long:
-			message = "Vector can have up to 4 dimensions"; break;
-		case matl_internal::exception_type::invalid_vector_component:
-			message = "Invalid vector component"; break;
-		case matl_internal::exception_type::unknown_token:
-			message = "Unknown token"; break;
-		case matl_internal::exception_type::no_such_domain:
-			message = "No such domain"; break;
-		case matl_internal::exception_type::domain_already_specified:
-			message = "Domain has already been selected"; break;
-		case matl_internal::exception_type::cannot_use_symbol_since_no_domain:
-			message = "Cannot use symbols since the domain is not specified yet"; break; 
-		}
-
-		for (auto& error : sub_errors)
-			message += "\n\t" + error;
-
 		auto exc = matl_exception{};
-		exc.message = std::move(message);
+		exc.message = std::move(error);
 		throw exc;
 	}
 }
@@ -400,8 +330,21 @@ namespace matl_internal
 		}
 
 		if (iterator == begin)
-			matl_throw(exception_type::unexpected_end_of_line, {});
+		{
+			std::string error = "Expected token not: ";
 
+			if (source.at(iterator) == ' ')
+				error += "space";
+			else if (source.at(iterator) == '\n')
+				error += "new line";
+			else if (source.at(iterator) == '\t')
+				error += "tab";
+			else
+				error += source.at(iterator);
+
+			matl_throw(error);
+		}
+			
 		return string_ref(source, begin, iterator);
 	}
 
@@ -784,7 +727,7 @@ namespace matl_internal
 			void expose(const std::string& source, matl::context* context, parsing_state& state)
 			{
 				if (state.expose_closure == true)
-					matl_throw(exception_type::cannot_use_directive_here, { "expose" });
+					matl_throw("Cannot use this directive here");
 
 				state.expose_closure = true;
 			}
@@ -792,7 +735,7 @@ namespace matl_internal
 			void end(const std::string& source, matl::context* context, parsing_state& state)
 			{
 				if (state.expose_closure == false)
-					matl_throw(exception_type::cannot_use_directive_here, { "end" });
+					matl_throw("Cannot use this directive here");
 
 				state.expose_closure = false;
 			}
@@ -808,7 +751,7 @@ namespace matl_internal
 					auto name = get_string_ref(source, state.iterator);
 
 					auto type = get_data_type(type_name);
-					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
+					if (type == nullptr) matl_throw("No such type: " + std::string(type_name));
 
 					state.domain->properties.insert({ name, type });
 				}
@@ -831,19 +774,19 @@ namespace matl_internal
 					auto type_name = get_string_ref(source, state.iterator);
 
 					auto type = get_data_type(type_name);
-					if (type == nullptr) matl_throw(exception_type::invalid_property_type, { type_name });
+					if (type == nullptr) matl_throw("No such type: " + std::string(type_name));
 
 					get_spaces(source, state.iterator);
 					auto name = get_string_ref(source, state.iterator);
 
 					get_spaces(source, state.iterator);
 					if (source.at(state.iterator) != '=')
-						matl_throw(exception_type::invalid_syntax, { "expected '='" });
+						matl_throw("Expected '='");
 
 					state.iterator++;
 
 					if (source.at(state.iterator) == '>')
-						matl_throw(exception_type::invalid_syntax, { "expected symbol definition" });
+						matl_throw("Expected symbol definition");
 
 					size_t begin = state.iterator;
 					get_to_char('>', source, state.iterator);
@@ -851,7 +794,7 @@ namespace matl_internal
 					state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)} });
 				}
 				else
-					matl_throw(exception_type::cannot_use_directive_here, { "symbol" });
+					matl_throw("Cannot use this directive here");
 			}
 
 			void dump(const std::string& source, matl::context* context, parsing_state& state)
@@ -868,7 +811,7 @@ namespace matl_internal
 						{ directive_type::dump_functions, {} }
 				);
 				else
-					matl_throw(exception_type::invalid_dump_type, { dump_what });
+					matl_throw("Invalid dump target: " + std::string(dump_what));
 
 				get_to_char('>', source, state.iterator);
 			}
@@ -903,7 +846,7 @@ namespace matl_internal
 		size_t iterator = 0;
 		int line_counter = 0;
 
-		//std::vector<int> errors;
+		std::vector<std::string> errors;
 
 		heterogeneous_map<std::string, typedefs::variable_definition, hgm_solver> variables;
 		heterogeneous_map<std::string, typedefs::property_definition, hgm_solver> properties;
@@ -984,7 +927,20 @@ namespace matl_internal
 			}
 
 			if (iterator == begin)
-				matl_throw(exception_type::unexpected_end_of_line, {});
+			{
+				std::string error = "Expected token not: ";
+
+				if (source.at(iterator) == ' ')
+					error += "space";
+				else if (source.at(iterator) == '\n')
+					error += "new line";
+				else if (source.at(iterator) == '\t')
+					error += "tab";
+				else
+					error += source.at(iterator);
+
+				matl_throw(error);
+			}
 
 			return string_ref{ source, begin, iterator };
 		}
@@ -992,6 +948,10 @@ namespace matl_internal
 		bool is_function_call(const std::string& source, size_t& iterator)
 		{
 			get_spaces(source, iterator);
+
+			if (is_at_line_end(source, iterator))
+				return false;
+
 			return (source.at(iterator) == '(');
 		}
 
@@ -1006,7 +966,7 @@ namespace matl_internal
 					return false;
 
 			if (dot_pos == 0 || dot_pos == node_str.size() - 1)
-				matl_throw(exception_type::invalid_scalar_literal, { node_str });
+				matl_throw("Invalid scalar literal: " + std::string(node_str));
 
 			return true;
 		}
@@ -1049,7 +1009,7 @@ namespace matl_internal
 
 		_get_comas_inside_parenthesis_break:
 			if (parenthesis_deepness != 0)
-				matl_throw(exception_type::mismatched_parentheses, {});
+				matl_throw("Mismatched parentheses");
 
 			return comas;
 		}
@@ -1128,7 +1088,7 @@ namespace matl_internal
 					new_node->value.vector_size = comas + 1;
 				}
 				else
-					matl_throw(exception_type::vector_too_long, {});
+					matl_throw("Constructed vector is too long");
 
 				operators.push_back(new_node);
 			};
@@ -1152,7 +1112,7 @@ namespace matl_internal
 				}
 
 				if (!found_left_parenthesis)
-					matl_throw(exception_type::mismatched_parentheses, {});
+					matl_throw("Mismatched parentheses");
 				else if (previous->type == node_type::single_arg_left_parenthesis)
 					operators.pop_back();
 				else
@@ -1223,18 +1183,45 @@ namespace matl_internal
 					auto components = get_string_ref(source, iterator);
 
 					if (components.size() > 4)
-						matl_throw(exception_type::vector_too_long, {});
+						matl_throw("Constructed vector is too long: " + std::string(node_str));
 
 					for (size_t i = 0; i < components.size(); i++)
 					{
 						auto itr = builtins::vector_components_names.find(components.at(i));
 						if (itr == builtins::vector_components_names.end())
-							matl_throw(exception_type::invalid_vector_component, { components, std::string{components.at(i)}});
+							matl_throw("No such vector component: " + components.at(i));
 						new_node->value.included_vector_components.push_back(itr->second);
 					}
 
 					accepts_right_unary_operator = false;
 					operators.push_back(new_node);
+				}
+				else if (is_scalar_literal(node_str))
+				{
+					new_node->type = node_type::scalar_literal;
+					new_node->value.scalar_value = node_str;
+					output.push_back(new_node);
+
+					accepts_right_unary_operator = false;
+				}
+				else if (node_str.at(0) == builtins::symbols_prefix)
+				{
+					new_node->type = node_type::symbol;
+
+					if (state.domain == nullptr)
+						matl_throw("Cannot use symbols since the domain is not loaded yet");
+
+					node_str.begin++;
+
+					auto itr = state.domain->symbols.find(node_str);
+
+					if (itr == state.domain->symbols.end())
+						matl_throw("No such symbol: " + std::string(node_str));
+				
+					new_node->value.symbol = &(itr->second);
+					output.push_back(new_node);
+
+					accepts_right_unary_operator = false;
 				}
 				else if (is_function_call(source, iterator))
 				{
@@ -1254,41 +1241,13 @@ namespace matl_internal
 
 					accepts_right_unary_operator = true;
 				}
-				else if (is_scalar_literal(node_str))
-				{
-					new_node->type = node_type::scalar_literal;
-					new_node->value.scalar_value = node_str;
-					output.push_back(new_node);
-
-					accepts_right_unary_operator = false;
-				}
-				else if (node_str.at(0) == builtins::symbols_prefix)
-				{
-					new_node->type = node_type::symbol;
-
-					if (state.domain == nullptr)
-						matl_throw(exception_type::cannot_use_symbol_since_no_domain, {});
-
-					node_str.begin++;
-
-					auto itr = state.domain->symbols.find(node_str);
-
-					if (itr == state.domain->symbols.end())
-						matl_throw(exception_type::no_such_symbol, { node_str });
-				
-					new_node->value.symbol = &(itr->second);
-					output.push_back(new_node);
-
-					accepts_right_unary_operator = false;
-					matl_throw(exception_type::unknown_token, { node_str });
-				}
 				else
 				{
 					new_node->type = node_type::variable;
 
 					auto itr = state.variables.find(node_str);
 					if (itr == state.variables.end())
-						matl_throw(exception_type::unknown_token, { node_str });
+						matl_throw("No such variable: " + std::string(node_str));
 					
 					new_node->value.variable = &(*itr);
 
@@ -1370,8 +1329,8 @@ namespace matl_internal
 					return;
 				}
 			}
-			matl_throw(exception_type::unknown_token, {});
-			//error_text = "Cannot " + op->operation_display_name + " types: left: " + left->name + " right: " + right->name;
+			std::string error = "Cannot " + op->operation_display_name + " types: left: " + left->name + " right: " + right->name;
+			matl_throw("No such variable: " + error);
 		};
 
 		auto handle_unary_operator = [&](const math::unary_operator* op)
@@ -1387,8 +1346,8 @@ namespace matl_internal
 					return;
 				}
 			}
-			matl_throw(exception_type::unknown_token, {});
-			//error_text = "Cannot " + op->operation_display_name + " type: " + operand->name;
+			std::string error = "Cannot " + op->operation_display_name + " type: " + operand->name;
+			matl_throw(error);
 		};
 
 		for (auto& n : exp->nodes)
@@ -1406,11 +1365,7 @@ namespace matl_internal
 			case node::node_type::symbol:
 			{
 				if (state.domain == nullptr)
-				{
-					matl_throw(exception_type::unknown_token, {});
-					//error_text = "Symbols cannot be used here";
-					break;
-				}
+					matl_throw("Cannot use symbols since the domain is not loaded yet");
 
 				types.push_back(n->value.symbol->type);
 				break;
@@ -1424,16 +1379,14 @@ namespace matl_internal
 				auto& type = get_type(0);
 
 				if (!builtins::is_vector(type))
-					matl_throw(exception_type::unknown_token, {});
-					//error_text = "Cannot swizzle not-vector type";
+					matl_throw("Cannot swizzle not-vector type");
 				else
 				{
 					size_t vec_size = builtins::get_vector_size(type);
 
 					for (auto& comp : n->value.included_vector_components)
 						if (comp > vec_size)
-							matl_throw(exception_type::unknown_token, {});
-							//error_text = type->name + " does not have " + std::to_string(comp) + " dimensions";
+							matl_throw(type->name + " does not have " + std::to_string(comp) + " dimensions");
 
 					size_t new_vec_size = n->value.included_vector_components.size();
 
@@ -1449,8 +1402,7 @@ namespace matl_internal
 				{
 					auto& type = get_type(i);
 					if (type != builtins::scalar_data_type)
-						matl_throw(exception_type::unknown_token, {});
-						//error_text = "Created vector must consist of scalars only";
+						matl_throw("Created vector must consist of scalars only");
 				}
 
 				pop_types(n->value.vector_size);
@@ -1636,10 +1588,7 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 
 			matl_internal::get_spaces(source, state.iterator);
 			if (source.at(state.iterator) != '>')
-				matl_internal::matl_throw(
-					matl_internal::exception_type::end_of_directive_expected, 
-					{}
-			);
+				matl_internal::matl_throw("Expected directive end");
 		}
 
 		matl_internal::get_to_char('>', domain_source, iterator);
@@ -1668,13 +1617,13 @@ namespace matl_internal
 			auto var_name = get_string_ref(source, iterator);
 
 			if (var_name.at(0) == builtins::symbols_prefix)
-				matl_throw(exception_type::symbol_declaration, {});
+				matl_throw("Cannot declare symbols in material");
 
 			get_spaces(source, iterator);
 			auto assign_operator = get_char(source, iterator);
 
 			if (assign_operator != '=')
-				matl_throw(exception_type::invalid_syntax, {});
+				matl_throw("Expected '='");
 
 			auto& var_def = state.variables.insert({ var_name, {} })->second;
 			var_def.definition = get_expression(source, iterator, state);
@@ -1692,7 +1641,7 @@ namespace matl_internal
 			auto assign_operator = get_char(source, iterator);
 
 			if (assign_operator != '=')
-				matl_throw(exception_type::invalid_syntax, {});
+				matl_throw("Expected '='");
 
 			auto& prop = state.properties.insert({ property_name, {} })->second;
 			prop.definition = get_expression(source, iterator, state);;
@@ -1711,13 +1660,17 @@ namespace matl_internal
 				auto domain_name = get_rest_of_line(source, iterator);
 
 				if (state.domain != nullptr)
-					matl_throw(exception_type::domain_already_specified, {});
+					matl_throw("Domain is already specified");
 
 				auto itr = context.domains.find(domain_name);
 				if (itr == context.domains.end())
-					matl_throw(exception_type::no_such_domain, { target });
+					matl_throw("No such domain: " + std::string(domain_name));
 
 				state.domain = itr->second;
+			}
+			else if (target == "library")
+			{
+				//Library
 			}
 			else
 			{
@@ -1758,15 +1711,38 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	while (!matl_internal::is_at_source_end(material_source, state.iterator))
 	{
-		matl_internal::parse_line(material_source, context->impl->impl, state);
+		try
+		{
+			matl_internal::parse_line(material_source, context->impl->impl, state);
+		}
+		catch (matl_internal::matl_exception& exc)
+		{
+			size_t line = state.line_counter;
+
+			if (exc.line_override != 0)
+				line = exc.line_override;
+
+			state.errors.push_back(std::to_string(line) + " : " + std::move(exc.message));
+		}
 
 		if (matl_internal::is_at_source_end(material_source, state.iterator)) break;
 		matl_internal::get_to_new_line(material_source, state.iterator);
 	}
 
-	if (state.domain == nullptr)//|| state.errors.size() != 0)
+	if (state.errors.size() != 0)
+	{	
+		parsed_material result;
+		result.success = false;
+		result.errors = std::move(state.errors);
+		return result;
+	}
+
+	if (state.domain == nullptr) 
 	{
-		return {}; //Error
+		parsed_material result;
+		result.success = false;
+		result.errors = {"Material does not specify the domain"};
+		return result;
 	}
 
 	parsed_material result;
@@ -1806,7 +1782,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 	}
 
-	return std::move(result);
+	return result;
 }
 inline void matl_internal::parse_line(const std::string& material_source, context_implementation& context, parsing_state& state)
 {
@@ -1823,7 +1799,7 @@ inline void matl_internal::parse_line(const std::string& material_source, contex
 	auto kh_itr = keywords_handles.find(keyword);
 
 	if (kh_itr == keywords_handles.end())
-		matl_throw(exception_type::unknown_keyword, { keyword });
+		matl_throw("Unknown keyword: " + std::string(keyword));
 	
 	kh_itr->second(material_source, context, state);
 }
