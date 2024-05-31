@@ -1,11 +1,10 @@
 #pragma once
 
-#include <string>
-#include <vector>
-
-
 //DEFINE MATL_IMPLEMENTATION
 //In order to implement matl in given translation unit
+
+#include <string>
+#include <vector>
 
 
 #pragma region API declaration
@@ -59,7 +58,7 @@ private:
 
 #pragma endregion API declaration
 
-//MATL IMPLEMENTATION
+
 #ifdef MATL_IMPLEMENTATION
 
 const std::string language_version = "0.1";
