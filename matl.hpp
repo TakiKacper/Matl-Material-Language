@@ -73,8 +73,11 @@ const std::string language_version = "0.1";
 
 struct string_ref
 {
+friend bool operator==(const string_ref& ref, const std::string& other);
+
 private:
 	const std::string& source;
+
 public:
 	size_t begin;
 	size_t end;
@@ -99,18 +102,23 @@ public:
 	{
 		return source.at(begin + id);
 	}
-
-	bool operator == (const std::string& other)
-	{
-		if (size() != other.size()) return false;
-
-		for (size_t i = 0; i < other.size(); i++)
-			if (source.at(i + begin) != other.at(i))
-				return false;
-
-		return true;
-	}
 };
+
+bool operator==(const string_ref& ref, const std::string& other)
+{
+	if (ref.size() != other.size()) return false;
+
+	for (size_t i = 0; i < other.size(); i++)
+		if (ref.source.at(i + ref.begin) != other.at(i))
+			return false;
+
+	return true;
+}
+
+bool operator == (const std::string& other, const string_ref& q)
+{
+	return operator==(q, other);
+}
 
 bool operator == (const string_ref& q, const string_ref& p)
 {
