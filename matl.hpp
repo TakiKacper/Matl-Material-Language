@@ -904,6 +904,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	while (!is_at_source_end(material_source, state.iterator))
 	{
+		state.line_counter++;
+
 		std::string error;
 
 		auto& source = material_source;
@@ -939,7 +941,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		continue;
 
 	_parse_material_handle_error:
-		state.errors.push_back(std::move(error));
+		state.errors.push_back('[' + std::to_string(state.line_counter) + "] " + std::move(error));
 	}
 
 	if (state.errors.size() != 0)
