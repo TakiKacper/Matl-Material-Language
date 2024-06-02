@@ -477,7 +477,7 @@ struct expression::node
 		const binary_operator*									binary_operator;
 		uint8_t													vector_size;
 		std::vector<uint8_t>									included_vector_components;
-		const std::pair<std::string, function_definition>*		function;
+		std::pair<std::string, function_definition>*			function;
 		~node_value() {};
 	} value;
 };
@@ -1159,6 +1159,13 @@ void matl::context::add_custom_using_case_callback(std::string _case, matl::cust
 
 #pragma region Expressions parsing utilities
 
+void instantiate_function(
+	function_definition& func_def,
+	const std::vector<const data_type*> arguments,
+	const function_collection* functions,
+	std::string& error
+);
+
 namespace expressions_parsing_utilities
 {
 	string_ref get_node_str(const std::string& source, size_t& iterator, std::string& error);
@@ -1192,6 +1199,7 @@ namespace expressions_parsing_utilities
 		expression::node* n,
 		const parsed_domain* domain,
 		std::vector<const data_type*>& types,
+		const function_collection* functions,
 		std::string& error
 	);
 }
@@ -1648,6 +1656,7 @@ inline void expressions_parsing_utilities::validate_node(
 	expression::node* n,
 	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
+	const function_collection* functions,
 	std::string& error
 )
 {
@@ -1701,7 +1710,7 @@ inline void expressions_parsing_utilities::validate_node(
 
 			pop_types(1);
 			types.push_back(at.returned_type);
-			return;			
+			return;
 		}
 		std::string error = "Cannot " + op->operation_display_name + " type: " + operand->name;
 	};
@@ -1728,11 +1737,11 @@ inline void expressions_parsing_utilities::validate_node(
 		break;
 	}
 	case node::node_type::binary_operator:
-		handle_binary_operator(n->value.binary_operator); 
+		handle_binary_operator(n->value.binary_operator);
 		check_error();
 		break;
 	case node::node_type::unary_operator:
-		handle_unary_operator(n->value.unary_operator); 
+		handle_unary_operator(n->value.unary_operator);
 		check_error();
 		break;
 	case node::node_type::vector_component_access:
@@ -1797,13 +1806,13 @@ inline void expressions_parsing_utilities::validate_node(
 
 		auto invalid_arguments_error = [&]()
 		{
-			error = "Function " + func_name + " is invalid for arguments: ";
+			auto the_error = "Function " + func_name + " is invalid for arguments: ";
 			for (size_t i = arguments_types.size() - 1; i != -1; i--)
 			{
-				error += arguments_types.at(i)->name;
-				if (i != 0) error += ", ";
+				the_error += arguments_types.at(i)->name;
+				if (i != 0) the_error += ", ";
 			}
-			throw_error(true, error);
+			return the_error;
 		};
 
 		for (auto& func_instance : func_def.instances)
@@ -1817,48 +1826,27 @@ inline void expressions_parsing_utilities::validate_node(
 					return;
 				}
 
-				invalid_arguments_error();
-				break;
+				throw_error(true, invalid_arguments_error());
 			}
 		}
 
-		throw_error(true, "Need for instantiate");
-		/*
+		instantiate_function(
+			func_def,
+			arguments_types,
+			functions,
+			error
+		);
 
-		{
-			std::vector<std::string> instantiating_errors;
+		if (error != "")
+			error = invalid_arguments_error() + '\n' + error;
+		check_error();
 
-			auto& func_instance = instantiate_function(
-				func_def,
-				arguments_types,
-				variables,
-				functions,
-				instantiating_errors
-			);
+		auto& instance = func_def.instances.back();
 
-			if (func_instance.valid)
-			{
-				pop_types(func_def->arguments.size());
-				types.push_back(func_instance.returned_type);
-				break;
-			}
-
-			invalid_arguments_error();
-
-			for (auto& error : instantiating_errors)
-			{
-				error_text += "\n\t";
-				error_text += error;
-			}
-		}
-
-	end_of_function_check:
-		break;*/
+		pop_types(func_def.arguments.size());
+		types.push_back(instance.returned_type);
 	}
 	}
-
-	//if (error_text.size() != 0)
-	//	return false;
 }
 
 #pragma endregion
@@ -1914,7 +1902,7 @@ expression* get_expression(
 	return exp;
 }
 
-const data_type* validate_expression(const expression* exp, const material_parsing_state& state, std::string& error)
+const data_type* validate_expression(const expression* exp, const parsed_domain* domain, const function_collection* functions, std::string& error)
 {
 	using node = expression::node;
 	using data_type = data_type;
@@ -1925,7 +1913,7 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 
 	for (auto& n : exp->nodes)
 	{
-		expressions_parsing_utilities::validate_node(n, state.domain, types, error);
+		expressions_parsing_utilities::validate_node(n, domain, types, functions, error);
 		if (error != "") break;
 	}
 
@@ -1937,6 +1925,53 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 	}
 
 	return types.back();
+}
+
+void instantiate_function(
+	function_definition& func_def,
+	const std::vector<const data_type*> arguments,
+	const function_collection* functions,
+	std::string& error
+)
+{
+	auto itr = func_def.variables.begin();
+	for (auto& arg : arguments)
+	{
+		itr->second.return_type = arg;
+		itr++;
+	}
+
+	while (itr != func_def.variables.end())
+	{
+		auto& var = itr->second;
+
+		std::string error2;
+
+		auto type = validate_expression(var.definition, nullptr, functions, error2);
+		var.return_type = type;
+
+		if (error2 != "")
+		{
+			error += '\t';
+			error += error2;
+			error += '\n';
+		}
+
+		itr++;
+	}
+
+	std::string error2;
+	auto return_type = validate_expression(func_def.result, nullptr, functions, error2);
+
+	func_def.instances.push_back({});
+	auto& instance = func_def.instances.back();
+
+	instance.valid = error == "";
+
+	if (!instance.valid) return;
+
+	instance.arguments_types = arguments;
+	instance.returned_type = return_type;
 }
 
 #pragma endregion
@@ -2111,7 +2146,7 @@ void material_keywords_handles::let
 			error
 		);
 		check_error();
-		var_def.return_type = validate_expression(var_def.definition, state, error);
+		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
 	}
 	else
 	{
@@ -2172,7 +2207,7 @@ void material_keywords_handles::property
 		error
 	);
 	
-	auto type = validate_expression(prop.definition, state, error);
+	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
 	check_error();
 
 	if (itr->second != type)
@@ -2271,15 +2306,13 @@ void material_keywords_handles::func
 		arguments.push_back(get_string_ref(source, iterator, error));
 		if (arguments.back() == "") error = "Expected argument name";
 		check_error();
+
 		get_spaces(source, iterator);
 
 		if (source.at(iterator) == ')') break;
 
-		if (source.at(iterator) != ',')
-		{
-			error = "Expected comma";
-			return;
-		}
+		throw_error(source.at(iterator) != ',', "Expected comma");
+
 		iterator++;
 	}
 
