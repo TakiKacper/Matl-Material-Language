@@ -1990,8 +1990,21 @@ void material_keywords_handles::property
 	if (assign_operator != '=')
 		error = "Expected '='";
 
+	auto itr = state.domain->properties.find(property_name);
+	if (itr == state.domain->properties.end())
+	{
+		error = "No such property: " + std::string(property_name);
+		return;
+	}
+
 	auto& prop = state.properties.insert({ property_name, {} })->second;
 	prop.definition = get_expression(source, iterator, state, error);
+	
+	auto type = validate_expression(prop.definition, state, error);
+	if (error != "") return;
+
+	if (itr->second != type)
+		error = "Invalid property type; expected: " + itr->second->name + " recived: " + type->name;
 }
 
 void material_keywords_handles::_using
