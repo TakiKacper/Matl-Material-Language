@@ -1459,10 +1459,9 @@ void expressions_parsing_utilities::shunting_yard(
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
+		new_node = new node{};
 		auto node_str = get_node_str(source, iterator, error);
 		check_error();
-
-		new_node = new node{};
 
 		if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
