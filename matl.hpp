@@ -2120,7 +2120,7 @@ void material_keywords_handles::let
 			iterator,
 			state.this_line_indentation_spaces,
 			state.line_counter,
-			&state.variables,		//!!!
+			&func_def.variables,
 			&state.functions,
 			nullptr,
 			error
@@ -2293,12 +2293,18 @@ void material_keywords_handles::func
 	auto& func_def = state.functions.insert({ name, {} })->second;
 	func_def.arguments = std::move(arguments);
 
+	for (auto& arg : func_def.arguments)
+		func_def.variables.insert({ arg, {} });
+
 	state.function_body = true;
 }
 
 void material_keywords_handles::_return
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	auto& iterator = state.iterator;
+	auto& func_def = state.functions.recent().second;
+
 	if (!state.function_body)
 	{
 		error = "Cannot return value from this scope";
@@ -2306,6 +2312,18 @@ void material_keywords_handles::_return
 	}
 
 	state.function_body = false;
+
+	func_def.result = get_expression(
+		source,
+		iterator,
+		state.this_line_indentation_spaces,
+		state.line_counter,
+		&func_def.variables,
+		&state.functions,
+		nullptr,
+		error
+	);
+	check_error();
 }
 
 #pragma endregion
