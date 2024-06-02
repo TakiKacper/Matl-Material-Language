@@ -494,15 +494,28 @@ struct variable_definition
 	expression* definition;
 	~variable_definition() { delete definition; }
 };
+using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_solver>;
+
+struct function_instance
+{
+	bool valid;
+	std::vector<const data_type*> arguments_types;
+	const data_type* returned_type;
+
+	std::string translated;
+};
 
 struct function_definition
 {
 	std::vector<std::string> arguments;
-	heterogeneous_map<std::string, variable_definition, hgm_solver> variables;
+	variables_collection variables;
 	expression* result;
+
+	std::vector<function_instance> instances;
 
 	~function_definition() { delete result; };
 };
+using function_collection = heterogeneous_map<std::string, function_definition, hgm_solver>;
 
 struct property_definition
 {
@@ -910,9 +923,9 @@ struct material_parsing_state
 
 	std::vector<std::string> errors;
 
-	heterogeneous_map<std::string, variable_definition, hgm_solver> variables;
+	variables_collection variables;
+	function_collection functions;
 	heterogeneous_map<std::string, property_definition, hgm_solver> properties;
-	heterogeneous_map<std::string, function_definition, hgm_solver> functions;
 
 	const parsed_domain* domain = nullptr;
 };
@@ -1154,12 +1167,17 @@ namespace expressions_parsing_utilities
 		expression::node* node
 	);
 	void shunting_yard(
-		material_parsing_state& state,
+		const std::string& source,
+		size_t& iterator,
+		int indentation,
+		int& lines_counter,
+		variables_collection* variables,
+		function_collection* functions,
+		bool can_use_symbols,
+		const parsed_domain* domain,
 		expression::node*& new_node,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
-		const std::string& source,
-		size_t& iterator,
 		std::string& error
 	);
 	void validate_node(
@@ -1338,12 +1356,17 @@ void expressions_parsing_utilities::insert_operator(
 };
 
 void expressions_parsing_utilities::shunting_yard(
-	material_parsing_state& state,
+	const std::string& source,
+	size_t& iterator,
+	int indentation,
+	int& lines_counter,
+	variables_collection* variables,
+	function_collection* functions,
+	bool can_use_symbols,
+	const parsed_domain* domain,
 	expression::node*& new_node,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
-	const std::string& source,
-	size_t& iterator,
 	std::string& error
 )
 {
@@ -1501,17 +1524,17 @@ _shunting_yard_loop:
 		{
 			new_node->type = node_type::symbol;
 
-			if (state.domain == nullptr)
+			if (!can_use_symbols)
 			{
-				error = "Cannot use symbols since the domain is not loaded yet";
+				error = "Cannot use symbols here";
 				return;
 			}
 
 			node_str.begin++;
 
-			auto itr = state.domain->symbols.find(node_str);
+			auto itr = domain->symbols.find(node_str);
 
-			if (itr == state.domain->symbols.end())
+			if (itr == domain->symbols.end())
 			{
 				error = "No such symbol: " + std::string(node_str);
 				return;
@@ -1545,8 +1568,8 @@ _shunting_yard_loop:
 		{
 			new_node->type = node_type::variable;
 
-			auto itr = state.variables.find(node_str);
-			if (itr == state.variables.end())
+			auto itr = variables->find(node_str);
+			if (itr == variables->end())
 			{
 				error = "No such variable: " + std::string(node_str);
 				return;
@@ -1572,7 +1595,7 @@ _shunting_yard_loop:
 
 		if (is_at_source_end(source, iterator_2)) goto _shunting_yard_end;
 
-		if (spaces > state.this_line_indentation_spaces)
+		if (spaces > indentation)
 		{
 			std::string temp_error;
 
@@ -1582,7 +1605,7 @@ _shunting_yard_loop:
 			if (temp_error != "" || keywords_handles.find(str) != keywords_handles.end())
 				goto _shunting_yard_end;
 			
-			state.line_counter++;
+			lines_counter++;
 			iterator = iterator_2;
 			goto _shunting_yard_loop;	
 		}
@@ -1839,14 +1862,36 @@ inline void expressions_parsing_utilities::validate_node(
 
 #pragma region Expression parsing
 
-expression* get_expression(const std::string& source, size_t& iterator, material_parsing_state& state, std::string& error)
+expression* get_expression(
+	const std::string& source, 
+	size_t& iterator, 
+	const int& indentation,
+	int& line_counter,
+	variables_collection* variables,
+	function_collection* functions,
+	const parsed_domain* domain,	//optional, nullptr if symbols are not allowed
+	std::string& error
+)
 {
 	expression::node* new_node = nullptr;
 
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
-	expressions_parsing_utilities::shunting_yard(state, new_node, output, operators, source, iterator, error);
+	expressions_parsing_utilities::shunting_yard(
+		source, 
+		iterator, 
+		indentation,
+		line_counter,
+		variables,
+		functions,
+		domain != nullptr,
+		domain,
+		new_node,
+		output,
+		operators,
+		error
+	);
 
 	if (error != "")
 	{
@@ -2053,14 +2098,34 @@ void material_keywords_handles::let
 	if (!state.function_body)
 	{
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
-		var_def.definition = get_expression(source, iterator, state, error);
+		var_def.definition = get_expression(
+			source, 
+			iterator, 
+			state.this_line_indentation_spaces,
+			state.line_counter,
+			&state.variables,
+			&state.functions,
+			state.domain,
+			error
+		);
+		check_error();
 		var_def.return_type = validate_expression(var_def.definition, state, error);
 	}
 	else
 	{
 		auto& func_def = state.functions.recent().second;
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
-		var_def.definition = get_expression(source, iterator, state, error);
+		var_def.definition = get_expression(
+			source,
+			iterator,
+			state.this_line_indentation_spaces,
+			state.line_counter,
+			&state.variables,		//!!!
+			&state.functions,
+			nullptr,
+			error
+		);
+		check_error();
 	}
 }
 
@@ -2094,7 +2159,16 @@ void material_keywords_handles::property
 	}
 
 	auto& prop = state.properties.insert({ property_name, {} })->second;
-	prop.definition = get_expression(source, iterator, state, error);
+	prop.definition = get_expression(
+		source,
+		iterator,
+		state.this_line_indentation_spaces,
+		state.line_counter,
+		&state.variables,
+		&state.functions,
+		state.domain,
+		error
+	);
 	
 	auto type = validate_expression(prop.definition, state, error);
 	check_error();
