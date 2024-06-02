@@ -33,6 +33,7 @@ namespace matl
 	};
 
 	using file_request_callback = file_request_response(*)(const std::string& file_name);
+	using custom_using_case_callback = void(std::string args, std::string& error);
 
 	class context;
 
@@ -53,6 +54,7 @@ private:
 
 public:
 	void set_library_request_callback(file_request_callback callback);
+	void add_custom_using_case_callback(std::string _case, custom_using_case_callback callback);
 
 private:
 	context();
@@ -729,6 +731,7 @@ struct context_public_implementation
 	matl::file_request_callback library_rc = nullptr;
 
 	heterogeneous_map<std::string, parsed_domain*, hgm_solver> domains;
+	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_solver> custom_using_cases;
 
 	translator* translator;
 
@@ -969,6 +972,9 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	_parse_material_handle_error:
 		state.errors.push_back('[' + std::to_string(state.line_counter) + "] " + std::move(error));
+
+		if (is_at_source_end(material_source, state.iterator)) break;
+		get_to_new_line(material_source, state.iterator);
 	}
 
 	if (state.errors.size() != 0)
@@ -1066,6 +1072,11 @@ void matl::destroy_context(context*& context)
 void matl::context::set_library_request_callback(file_request_callback callback)
 {
 	impl->impl.library_rc = callback;
+}
+
+void matl::context::add_custom_using_case_callback(std::string _case, matl::custom_using_case_callback callback)
+{
+	impl->impl.custom_using_cases.insert({ _case, callback });
 }
 
 #pragma endregion
@@ -1970,6 +1981,18 @@ void material_keywords_handles::_using
 	else
 	{
 		//Call custom
+		auto itr = context.custom_using_cases.find(target);
+		if (itr == context.custom_using_cases.end())
+		{
+			error = "No such using case: " + std::string(target);
+			return;
+		}
+		else
+		{
+			get_spaces(source, iterator);
+			auto arg = get_rest_of_line(source, iterator);;
+			itr->second(arg, error);
+		}
 	}
 }
 
