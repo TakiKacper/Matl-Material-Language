@@ -882,6 +882,7 @@ struct material_parsing_state
 {
 	size_t iterator = 0;
 	int line_counter = 0;
+	int this_line_indentation_spaces = 0;
 
 	std::vector<std::string> errors;
 
@@ -941,7 +942,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		auto& source = material_source;
 		auto& iterator = state.iterator;
 
-		int spaces = get_spaces(source, iterator);
+		state.this_line_indentation_spaces = get_spaces(source, iterator);
 
 		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
 		if (source.at(iterator) == comment_char) goto _parse_material_next_line;
@@ -1361,6 +1362,8 @@ void expressions_parsing_utilities::shunting_yard(
 	};
 
 	get_spaces(source, iterator);
+
+_shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
 		auto node_str = get_node_str(source, iterator, error);
@@ -1505,6 +1508,33 @@ void expressions_parsing_utilities::shunting_yard(
 		get_spaces(source, iterator);
 	}
 
+	if (is_at_source_end(source, iterator)) goto _shunting_yard_end;
+
+	{
+		size_t iterator_2 = iterator;
+		get_to_new_line(source, iterator_2);
+
+		int spaces = get_spaces(source, iterator_2);
+
+		if (is_at_source_end(source, iterator_2)) goto _shunting_yard_end;
+
+		if (spaces > state.this_line_indentation_spaces)
+		{
+			std::string temp_error;
+
+			size_t iterator_3 = iterator_2;
+			auto str = get_string_ref(source, iterator_3, temp_error);
+
+			if (temp_error != "" || keywords_handles.find(str) != keywords_handles.end())
+				goto _shunting_yard_end;
+			
+			state.line_counter++;
+			iterator = iterator_2;
+			goto _shunting_yard_loop;	
+		}
+	}
+
+_shunting_yard_end:
 	//Push all binary_operators left on the binary_operators stack to the output
 	auto itr = operators.rbegin();
 	while (itr != operators.rend())
