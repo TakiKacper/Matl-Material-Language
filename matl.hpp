@@ -1550,8 +1550,17 @@ _shunting_yard_loop:
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
 			check_error();
 
+			iterator++;
+			throw_error(is_at_source_end(source, iterator), "Unexpected file end");
+
 			if (args_ammount != 0)
 				args_ammount++;
+			else
+			{
+				get_spaces(source, iterator);
+				if (get_char(source, iterator) != ')')
+					args_ammount = 1;
+			}
 
 			new_node->type = node_type::function;
 			new_node->value.function_name_and_passed_args = {
