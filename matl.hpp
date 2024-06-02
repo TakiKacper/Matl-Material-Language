@@ -1722,6 +1722,10 @@ inline void expressions_parsing_utilities::validate_node(
 	case node::node_type::variable:
 	{
 		auto& var = n->value.variable;
+
+		throw_error(var->second.return_type == nullptr, 
+			"Cannot use variable: " + std::string(var->first) + " since it's type could not be discern");
+
 		types.push_back(var->second.return_type);
 		break;
 	}
@@ -1935,9 +1939,9 @@ void instantiate_function(
 )
 {
 	auto itr = func_def.variables.begin();
-	for (auto& arg : arguments)
+	for (auto arg = arguments.rbegin(); arg != arguments.rend(); arg++)
 	{
-		itr->second.return_type = arg;
+		itr->second.return_type = *arg;
 		itr++;
 	}
 
