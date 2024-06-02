@@ -1297,7 +1297,7 @@ void expressions_parsing_utilities::shunting_yard(
 	using node_type = node::node_type;
 
 	bool accepts_right_unary_operator = true;
-
+	
 	auto push_vector_or_parenthesis = [&]()
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
@@ -1565,6 +1565,12 @@ inline void expressions_parsing_utilities::validate_node(
 
 	auto handle_binary_operator = [&](const binary_operator* op)
 	{
+		if (types.size() < 2)
+		{
+			error = "Invalid expression";
+			return;
+		}
+
 		auto left = get_type(1);
 		auto right = get_type(0);
 
@@ -1581,6 +1587,12 @@ inline void expressions_parsing_utilities::validate_node(
 
 	auto handle_unary_operator = [&](const unary_operator* op)
 	{
+		if (types.size() == 0)
+		{
+			error = "Invalid expression";
+			return;
+		}
+
 		auto operand = get_type(0);
 
 		for (auto& at : op->allowed_types)
@@ -1625,6 +1637,12 @@ inline void expressions_parsing_utilities::validate_node(
 		break;
 	case node::node_type::vector_component_access:
 	{
+		if (types.size() == 0)
+		{
+			error = "Invalid expression";
+			return;
+		}
+
 		auto& type = get_type(0);
 
 		if (!is_vector(type))
@@ -1804,9 +1822,18 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 	if (exp == nullptr) return nullptr;
 
 	for (auto& n : exp->nodes)
+	{
 		expressions_parsing_utilities::validate_node(n, state, types, error);
+		if (error != "")
+			break;
+	}
 
 	if (error != "") return nullptr;
+	if (types.size() != 1)
+	{
+		error = "Invalid expression"; 
+		return nullptr;
+	}
 
 	return types.back();
 }
