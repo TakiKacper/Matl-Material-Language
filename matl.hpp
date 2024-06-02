@@ -72,6 +72,9 @@ private:
 const std::string language_version = "0.1";
 
 
+#define check_error() if (error != "") return
+#define throw_error(condition, _error) if (condition) { error = _error; return; } 1
+
 #include <list>
 #include <unordered_map>
 #include <stdexcept>
@@ -168,6 +171,16 @@ public:
 	inline _const_iterator end() const
 	{
 		return records.end();
+	}
+
+	inline _record& recent()
+	{
+		return records.back();
+	}
+
+	inline const _record& recent() const
+	{
+		return records.back();
 	}
 
 	template<class _key2>
@@ -480,6 +493,15 @@ struct variable_definition
 	const data_type* return_type;
 	expression* definition;
 	~variable_definition() { delete definition; }
+};
+
+struct function_definition
+{
+	std::vector<std::string> arguments;
+	heterogeneous_map<std::string, variable_definition, hgm_solver> variables;
+	expression* result;
+
+	~function_definition() { delete result; };
 };
 
 struct property_definition
@@ -884,10 +906,13 @@ struct material_parsing_state
 	int line_counter = 0;
 	int this_line_indentation_spaces = 0;
 
+	bool function_body = false;
+
 	std::vector<std::string> errors;
 
 	heterogeneous_map<std::string, variable_definition, hgm_solver> variables;
 	heterogeneous_map<std::string, property_definition, hgm_solver> properties;
+	heterogeneous_map<std::string, function_definition, hgm_solver> functions;
 
 	const parsed_domain* domain = nullptr;
 };
@@ -942,10 +967,40 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		auto& source = material_source;
 		auto& iterator = state.iterator;
 
-		state.this_line_indentation_spaces = get_spaces(source, iterator);
+		int spaces = get_spaces(source, iterator);
 
-		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
 		if (source.at(iterator) == comment_char) goto _parse_material_next_line;
+		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
+
+		if (state.function_body)
+		{
+			if (spaces == 0 && state.this_line_indentation_spaces == 0)
+			{
+				error = "Expected function body";
+				state.function_body = false;
+				goto _parse_material_handle_error;
+			}
+
+			if (spaces == 0 && state.this_line_indentation_spaces != 0)
+			{
+				error = "Unexpected function end";
+				state.function_body = false;
+				goto _parse_material_handle_error;
+			}
+			
+			if (spaces != state.this_line_indentation_spaces && state.this_line_indentation_spaces != 0)
+			{
+				error = "Indentation level must be consistient";
+				goto _parse_material_handle_error;
+			}
+		}
+		else if (spaces != 0)
+		{
+			error = "Indentation level must be consistient";
+			goto _parse_material_handle_error;
+		}
+
+		state.this_line_indentation_spaces = spaces;
 
 		{
 			string_ref keyword = get_string_ref(source, iterator, error);
@@ -961,7 +1016,6 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			}
 				
 			kh_itr->second(material_source, context_impl, state, error);
-
 			if (error != "") goto _parse_material_handle_error;
 		}
 
@@ -1367,7 +1421,7 @@ _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
 		auto node_str = get_node_str(source, iterator, error);
-		if (error != "") return;
+		check_error();
 
 		new_node = new node{};
 
@@ -1411,7 +1465,7 @@ _shunting_yard_loop:
 			get_spaces(source, iterator);
 			auto components = get_string_ref(source, iterator, error);
 
-			if (error != "") return;
+			check_error();
 
 			if (components.size() > 4)
 			{
@@ -1435,7 +1489,7 @@ _shunting_yard_loop:
 		}
 		else if (is_scalar_literal(node_str, error))
 		{
-			if (error != "") return;
+			check_error();
 
 			new_node->type = node_type::scalar_literal;
 			new_node->value.scalar_value = node_str;
@@ -1471,7 +1525,7 @@ _shunting_yard_loop:
 		else if (is_function_call(source, iterator))
 		{
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
-			if (error != "") return;
+			check_error();
 
 			if (args_ammount != 0)
 				args_ammount++;
@@ -1629,11 +1683,11 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::binary_operator:
 		handle_binary_operator(n->value.binary_operator); 
-		if (error != "") return;
+		check_error();
 		break;
 	case node::node_type::unary_operator:
 		handle_unary_operator(n->value.unary_operator); 
-		if (error != "") return;
+		check_error();
 		break;
 	case node::node_type::vector_component_access:
 	{
@@ -1983,7 +2037,7 @@ void material_keywords_handles::let
 	get_spaces(source, iterator);
 	auto var_name = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	if (var_name.at(0) == symbols_prefix)
 		error = "Cannot declare symbols in material";
@@ -1994,22 +2048,37 @@ void material_keywords_handles::let
 	if (assign_operator != '=')
 		error = "Expected '='";
 
-	if (error != "") return;
+	check_error();
 
-	auto& var_def = state.variables.insert({ var_name, {} })->second;
-	var_def.definition = get_expression(source, iterator, state, error);
-	var_def.return_type = validate_expression(var_def.definition, state, error);
+	if (!state.function_body)
+	{
+		auto& var_def = state.variables.insert({ var_name, {} })->second;
+		var_def.definition = get_expression(source, iterator, state, error);
+		var_def.return_type = validate_expression(var_def.definition, state, error);
+	}
+	else
+	{
+		auto& func_def = state.functions.recent().second;
+		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
+		var_def.definition = get_expression(source, iterator, state, error);
+	}
 }
 
 void material_keywords_handles::property
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	if (state.function_body)
+	{
+		error = "Cannot use property in this scope";
+		return;
+	}
+
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
 	auto property_name = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
@@ -2028,7 +2097,7 @@ void material_keywords_handles::property
 	prop.definition = get_expression(source, iterator, state, error);
 	
 	auto type = validate_expression(prop.definition, state, error);
-	if (error != "") return;
+	check_error();
 
 	if (itr->second != type)
 		error = "Invalid property type; expected: " + itr->second->name + " recived: " + type->name;
@@ -2037,12 +2106,18 @@ void material_keywords_handles::property
 void material_keywords_handles::_using
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	if (state.function_body)
+	{
+		error = "Cannot use using in this scope";
+		return;
+	}
+
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
 	auto target = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	if (target == "domain")
 	{
@@ -2056,7 +2131,7 @@ void material_keywords_handles::_using
 		if (itr == context.domains.end())
 			error = "No such domain: " + std::string(domain_name);
 
-		if (error != "") return;
+		check_error();
 
 		state.domain = itr->second;
 	}
@@ -2085,15 +2160,81 @@ void material_keywords_handles::_using
 void material_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	auto& iterator = state.iterator;
 
+	get_spaces(source, iterator);
+	std::string name = get_string_ref(source, iterator, error);
+	if (name == "") error = "Expected function name";
+	check_error();
+
+	{
+		get_spaces(source, iterator);
+		if (is_at_source_end(source, iterator))
+		{
+			error = "";
+			return;
+		}
+
+		if (source.at(iterator) != '(')
+		{
+			error = "Expected (";
+			return;
+		}
+
+		iterator++;
+	}
+
+	std::vector<std::string> arguments;
+
+	while (true)
+	{
+		get_spaces(source, iterator);
+
+		if (source.at(iterator) == ')') break;
+
+		arguments.push_back(get_string_ref(source, iterator, error));
+		if (arguments.back() == "") error = "Expected argument name";
+		check_error();
+		get_spaces(source, iterator);
+
+		if (source.at(iterator) == ')') break;
+
+		if (source.at(iterator) != ',')
+		{
+			error = "Expected comma";
+			return;
+		}
+		iterator++;
+	}
+
+	iterator++;
+	get_spaces(source, iterator);
+	
+	if (!is_at_line_end(source, iterator))
+	{
+		error = "Expected line end";
+		return;
+	}
+
+	auto& func_def = state.functions.insert({ name, {} })->second;
+	func_def.arguments = std::move(arguments);
+
+	state.function_body = true;
 }
 
 void material_keywords_handles::_return
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	if (!state.function_body)
+	{
+		error = "Cannot return value from this scope";
+		return;
+	}
 
+	state.function_body = false;
 }
 
 #pragma endregion
 
+#undef check_error
 #endif
