@@ -26,6 +26,12 @@ namespace matl
 		std::vector<std::string> errors;
 	};
 
+	struct domain_parsing_raport
+	{
+		bool success = false;
+		std::vector<std::string> errors;
+	};
+
 	using file_request_callback = file_request_response(*)(const std::string& file_name);
 
 	class context;
@@ -34,7 +40,7 @@ namespace matl
 	void destroy_context(context*&);
 
 	parsed_material parse_material(const std::string& material_source, matl::context* context);
-	void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
+	domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 }
 
 class matl::context 
@@ -43,7 +49,7 @@ private:
 	struct implementation;
 	implementation* impl;
 	friend parsed_material parse_material(const std::string& material_source, matl::context* context);
-	friend void parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
+	friend domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 public:
 	void set_library_request_callback(file_request_callback callback);
@@ -749,20 +755,22 @@ struct domain_parsing_state
 	size_t iterator = 0;
 	parsed_domain* domain;
 
+	std::vector<std::string> errors;
+
 	bool expose_closure = false;
 };
 
 using directive_handle =
-	void(*)(const std::string& material_source, matl::context* context, domain_parsing_state& state);
+	void(*)(const std::string& material_source, matl::context* context, domain_parsing_state& state, std::string& error);
 
 namespace domain_directives_handles
 {
-	void expose(const std::string& source, matl::context* context, domain_parsing_state& state);
-	void end(const std::string& source, matl::context* context, domain_parsing_state& state);
-	void property(const std::string& source, matl::context* context, domain_parsing_state& state);
-	void symbol(const std::string& source, matl::context* context, domain_parsing_state& state);
-	void dump(const std::string& source, matl::context* context, domain_parsing_state& state);
-	void split(const std::string& source, matl::context* context, domain_parsing_state& state);
+	void expose(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void end(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void property(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void symbol(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void dump(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void split(const std::string&, matl::context*, domain_parsing_state&, std::string&);
 }
 
 heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles_lookup =
@@ -777,7 +785,7 @@ heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles_
 	}
 };
 
-void matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context)
+matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context)
 {
 	auto& context_impl = context->impl->impl;
 
@@ -788,11 +796,14 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 	auto& iterator = state.iterator;
 
 	size_t last_position = 0;
-
-	std::string error;
+	int line_counter = 0;
 
 	while (true)
 	{
+		std::string error;
+
+		line_counter++;
+
 		get_to_char('<', domain_source, iterator);
 
 		if (last_position != iterator)
@@ -819,14 +830,19 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 		{
 			error = "No such directive: " + std::string(directive);
 			get_to_char('>', domain_source, iterator);
+			goto _parse_domain_handle_error;
 		}
 		else
 		{
-			handle->second(source, context, state);
+			handle->second(source, context, state, error);
+			if (error != "") goto _parse_domain_handle_error;
 
 			get_spaces(source, state.iterator);
 			if (source.at(state.iterator) != '>')
+			{
 				error = "Expected directive end";
+				goto _parse_domain_handle_error;
+			}
 		}
 
 		get_to_char('>', domain_source, iterator);
@@ -834,13 +850,25 @@ void matl::parse_domain(const std::string domain_name, const std::string& domain
 
 		last_position = iterator;
 		}
+
+		continue;
+
 	_parse_domain_handle_error:
-		//TODO
-		//state.errors
-		1;
+		state.errors.push_back('[' + std::to_string(line_counter) + "] " + std::move(error));
 	}
 
-	context_impl.domains.insert({ domain_name, state.domain });
+	domain_parsing_raport raport;
+	if (state.errors.size() == 0)
+	{
+		raport.success = true;
+		context_impl.domains.insert({ domain_name, state.domain });
+	}
+	else
+	{
+		raport.success = false;
+		raport.errors = std::move(state.errors);
+	}
+	return raport;
 }
 
 #pragma endregion
@@ -887,7 +915,6 @@ heterogeneous_map<std::string, keyword_handle, hgm_solver> keywords_handles =
 	}
 };
 
-//RETURNHERE
 matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
 {
 	if (context == nullptr)
@@ -1747,42 +1774,41 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 
 #pragma region Directives handles implementations
 
-void domain_directives_handles::expose(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::expose(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
-	//if (state.expose_closure == true)
-	//	matl_throw("Cannot use this directive here");
+	if (state.expose_closure == true)
+		error = "Cannot use this directive here";
 
 	state.expose_closure = true;
 }
 
-void domain_directives_handles::end(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::end(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
-	//if (state.expose_closure == false)
-	//	matl_throw("Cannot use this directive here");
+	if (state.expose_closure == false)
+		error = "Cannot use this directive here";
 
 	state.expose_closure = false;
 }
 
-void domain_directives_handles::property(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::property(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
-	std::string temperr;
 	if (state.expose_closure)
 	{
 		get_spaces(source, state.iterator);
-		auto type_name = get_string_ref(source, state.iterator, temperr);
+		auto type_name = get_string_ref(source, state.iterator, error);
 
 		get_spaces(source, state.iterator);
-		auto name = get_string_ref(source, state.iterator, temperr);
+		auto name = get_string_ref(source, state.iterator, error);
 
 		auto type = get_data_type(type_name);
-		//if (type == nullptr) matl_throw("No such type: " + std::string(type_name));
+		if (type == nullptr) error = "No such type: " + std::string(type_name);
 
 		state.domain->properties.insert({ name, type });
 	}
 	else
 	{
 		get_spaces(source, state.iterator);
-		auto name = get_string_ref(source, state.iterator, temperr);
+		auto name = get_string_ref(source, state.iterator, error);
 
 		state.domain->directives.push_back(
 			{ directive_type::dump_property, std::move(name) }
@@ -1790,39 +1816,51 @@ void domain_directives_handles::property(const std::string& source, matl::contex
 	}
 }
 
-void domain_directives_handles::symbol(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::symbol(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
-	std::string temperr;
 	if (state.expose_closure)
 	{
 		get_spaces(source, state.iterator);
-		auto type_name = get_string_ref(source, state.iterator, temperr);
+		auto type_name = get_string_ref(source, state.iterator, error);
+		if (error != "") return;
 
 		auto type = get_data_type(type_name);
-		//if (type == nullptr) matl_throw("No such type: " + std::string(type_name));
+		if (type == nullptr)
+		{
+			error = "No such type: " + std::string(type_name);
+			return;
+		}
 
 		get_spaces(source, state.iterator);
-		auto name = get_string_ref(source, state.iterator, temperr);
+		auto name = get_string_ref(source, state.iterator, error);
+
+		if (error != "") return;
 
 		get_spaces(source, state.iterator);
-		//if (source.at(state.iterator) != '=')
-		//	matl_throw("Expected '='");
+		if (source.at(state.iterator) != '=')
+		{
+			error = "Expected '='";
+			return;
+		}
 
 		state.iterator++;
 
-		//if (source.at(state.iterator) == '>')
-		//	matl_throw("Expected symbol definition");
+		if (source.at(state.iterator) == '>')
+		{
+			error = ("Expected symbol definition");
+			return;
+		}
 
 		size_t begin = state.iterator;
 		get_to_char('>', source, state.iterator);
 
 		state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)} });
 	}
-	//else
-		//matl_throw("Cannot use this directive here");
+	else
+		error = "Cannot use this directive here";
 }
 
-void domain_directives_handles::dump(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::dump(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
 	std::string temperr;
 	get_spaces(source, state.iterator);
@@ -1836,13 +1874,13 @@ void domain_directives_handles::dump(const std::string& source, matl::context* c
 		state.domain->directives.push_back(
 			{ directive_type::dump_functions, {} }
 	);
-	//else
-		//matl_throw("Invalid dump target: " + std::string(dump_what));
+	else
+		error = "Invalid dump target: " + std::string(dump_what);
 
 	get_to_char('>', source, state.iterator);
 }
 
-void domain_directives_handles::split(const std::string& source, matl::context* context, domain_parsing_state& state)
+void domain_directives_handles::split(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
 {
 	state.domain->directives.push_back(
 		{ directive_type::split, {} }
