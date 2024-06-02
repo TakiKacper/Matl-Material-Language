@@ -1808,8 +1808,14 @@ void domain_directives_handles::property(const std::string& source, matl::contex
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
 
+		if (error != "")
+			return;
+
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
+
+		if (error != "")
+			return;
 
 		auto type = get_data_type(type_name);
 		if (type == nullptr) error = "No such type: " + std::string(type_name);
@@ -1820,6 +1826,16 @@ void domain_directives_handles::property(const std::string& source, matl::contex
 	{
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
+
+		if (error != "")
+			return;
+
+		auto itr = state.domain->properties.find(name);
+		if (itr == state.domain->properties.end())
+		{
+			error = "No such property: " + std::string(name);
+			return;
+		}
 
 		state.domain->directives.push_back(
 			{ directive_type::dump_property, std::move(name) }
