@@ -477,7 +477,7 @@ struct expression::node
 		const binary_operator*									binary_operator;
 		uint8_t													vector_size;
 		std::vector<uint8_t>									included_vector_components;
-		std::pair<std::string, int>								function_name_and_passed_args;
+		const std::pair<std::string, function_definition>*		function;
 		~node_value() {};
 	} value;
 };
@@ -501,6 +501,14 @@ struct function_instance
 	bool valid;
 	std::vector<const data_type*> arguments_types;
 	const data_type* returned_type;
+
+	bool args_matching(const std::vector<const data_type*>& args) const
+	{
+		for (int i = 0; i < arguments_types.size(); i++)
+			if (args.at(i) != arguments_types.at(i))
+				return false;
+		return true;
+	}
 
 	std::string translated;
 };
@@ -1181,9 +1189,9 @@ namespace expressions_parsing_utilities
 		std::string& error
 	);
 	void validate_node(
-		expression::node* n, 
-		const material_parsing_state& state, 
-		std::vector<const data_type*>& types, 
+		expression::node* n,
+		const parsed_domain* domain,
+		std::vector<const data_type*>& types,
 		std::string& error
 	);
 }
@@ -1550,7 +1558,7 @@ _shunting_yard_loop:
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
 			check_error();
 
-			iterator++;
+			iterator++; //Jump over the ( char
 			throw_error(is_at_source_end(source, iterator), "Unexpected file end");
 
 			if (args_ammount != 0)
@@ -1562,14 +1570,20 @@ _shunting_yard_loop:
 					args_ammount = 1;
 			}
 
+			auto itr = functions->find(node_str);
+			
+			throw_error(itr == functions->end(), "No such function: " + std::string(node_str));
+
+			throw_error(itr->second.arguments.size() != args_ammount,
+				"Function " + std::string(node_str)
+				+ " takes " + std::to_string(itr->second.arguments.size())
+				+ " arguments, not " + std::to_string(args_ammount);
+			);
+
 			new_node->type = node_type::function;
-			new_node->value.function_name_and_passed_args = {
-				std::move(node_str),
-				args_ammount
-			};
+			new_node->value.function = &(*itr);
 
 			insert_operator(operators, output, new_node);
-			iterator++;	//Jump over the ( char
 
 			accepts_right_unary_operator = true;
 		}
@@ -1632,7 +1646,7 @@ _shunting_yard_end:
 
 inline void expressions_parsing_utilities::validate_node(
 	expression::node* n,
-	const material_parsing_state& state, 
+	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
 	std::string& error
 )
@@ -1704,7 +1718,7 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::symbol:
 	{
-		if (state.domain == nullptr)
+		if (domain == nullptr)
 		{
 			error = "Cannot use symbols since the domain is not loaded yet";
 			return;
@@ -1773,63 +1787,43 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::function:
 	{
-		/*const auto& func_name = n->value.function_name_and_passed_args.first;
-
-		function_definition* func_def = nullptr;
-		for (auto& func_coll : functions)
-		{
-			auto itr = func_coll->find(func_name);
-			if (itr != func_coll->end())
-			{
-				func_def = &itr->second;
-				break;
-			}
-		}
-
-		if (func_def == nullptr)
-		{
-			error_text = "No such function: " + func_name;
-			break;
-		}
-
-		if (n->value.function_name_and_passed_args.second != func_def->arguments.size())
-		{
-			error_text = "Function " + func_name
-				+ " takes " + std::to_string(func_def->arguments.size())
-				+ " arguments, not " + std::to_string(n->value.function_name_and_passed_args.second);
-			break;
-		}
+		auto& func_name = n->value.function->first;
+		auto& func_def = n->value.function->second;
 
 		std::vector<const data_type*> arguments_types;
 
-		for (size_t i = 0; i < func_def->arguments.size(); i++)
+		for (size_t i = 0; i < func_def.arguments.size(); i++)
 			arguments_types.push_back(get_type(i));
 
 		auto invalid_arguments_error = [&]()
 		{
-			error_text = "Function " + func_name + " is invalid for arguments: ";
+			error = "Function " + func_name + " is invalid for arguments: ";
 			for (size_t i = arguments_types.size() - 1; i != -1; i--)
 			{
-				error_text += arguments_types.at(i)->name;
-				if (i != 0) error_text += ", ";
+				error += arguments_types.at(i)->name;
+				if (i != 0) error += ", ";
 			}
+			throw_error(true, error);
 		};
 
-		for (auto& func_instance : func_def->instances)
+		for (auto& func_instance : func_def.instances)
 		{
-			if (func_instance.match_args(arguments_types))
+			if (func_instance.args_matching(arguments_types))
 			{
 				if (func_instance.valid)
 				{
-					pop_types(func_def->arguments.size());
+					pop_types(func_def.arguments.size());
 					types.push_back(func_instance.returned_type);
-					goto end_of_function_check;
+					return;
 				}
 
 				invalid_arguments_error();
 				break;
 			}
 		}
+
+		throw_error(true, "Need for instantiate");
+		/*
 
 		{
 			std::vector<std::string> instantiating_errors;
@@ -1931,9 +1925,8 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 
 	for (auto& n : exp->nodes)
 	{
-		expressions_parsing_utilities::validate_node(n, state, types, error);
-		if (error != "")
-			break;
+		expressions_parsing_utilities::validate_node(n, state.domain, types, error);
+		if (error != "") break;
 	}
 
 	if (error != "") return nullptr;
@@ -2338,4 +2331,6 @@ void material_keywords_handles::_return
 #pragma endregion
 
 #undef check_error
+#undef throw_error
+
 #endif
