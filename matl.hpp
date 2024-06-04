@@ -513,6 +513,8 @@ struct function_instance
 
 struct function_definition
 {
+	bool valid = true;
+
 	std::vector<std::string> arguments;
 	variables_collection variables;
 	expression* result;
@@ -1592,6 +1594,7 @@ _shunting_yard_loop:
 			auto itr = functions->find(node_str);
 			
 			throw_error(itr == functions->end(), "No such function: " + std::string(node_str));
+			throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
 
 			throw_error(itr->second.arguments.size() != args_ammount,
 				"Function " + std::string(node_str)
@@ -1665,6 +1668,44 @@ _shunting_yard_end:
 		output.push_back(*itr);
 		itr++;
 	}
+
+	operators.clear();
+	new_node = nullptr;
+
+	size_t operands_check_sum = 0;
+	for (auto& n : output)
+	{
+		switch (n->type)
+		{
+		case node_type::scalar_literal:
+		case node_type::symbol:		
+		case node_type::variable:
+			operands_check_sum++; 
+			break;
+		case node_type::function:
+			throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
+			operands_check_sum -= n->value.function->second.arguments.size();
+			operands_check_sum++;
+			break;
+		case node_type::vector_contructor_operator:
+			throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
+			operands_check_sum -= n->value.vector_size;
+			operands_check_sum++;
+			break;
+		case node_type::binary_operator:
+			throw_error(operands_check_sum < 2, "Invalid expression");
+			operands_check_sum -= 2;
+			operands_check_sum++;
+			break;
+		case node_type::single_arg_left_parenthesis:
+		case node_type::unary_operator:
+		case node_type::vector_component_access:
+			throw_error(operands_check_sum < 1, "Invalid expression");
+			break;
+		}
+	}
+
+	throw_error(operands_check_sum != 1, "Invalid expression");
 }
 
 inline void expressions_parsing_utilities::validate_node(
@@ -1689,12 +1730,6 @@ inline void expressions_parsing_utilities::validate_node(
 
 	auto handle_binary_operator = [&](const binary_operator* op)
 	{
-		if (types.size() < 2)
-		{
-			error = "Invalid expression";
-			return;
-		}
-
 		auto left = get_type(1);
 		auto right = get_type(0);
 
@@ -1711,12 +1746,6 @@ inline void expressions_parsing_utilities::validate_node(
 
 	auto handle_unary_operator = [&](const unary_operator* op)
 	{
-		if (types.size() == 0)
-		{
-			error = "Invalid expression";
-			return;
-		}
-
 		auto operand = get_type(0);
 
 		for (auto& at : op->allowed_types)
@@ -1765,12 +1794,6 @@ inline void expressions_parsing_utilities::validate_node(
 		break;
 	case node::node_type::vector_component_access:
 	{
-		if (types.size() == 0)
-		{
-			error = "Invalid expression";
-			return;
-		}
-
 		auto& type = get_type(0);
 
 		if (!is_vector(type))
@@ -1937,11 +1960,6 @@ const data_type* validate_expression(const expression* exp, const parsed_domain*
 	}
 
 	if (error != "") return nullptr;
-	if (types.size() != 1)
-	{
-		error = "Invalid expression"; 
-		return nullptr;
-	}
 
 	return types.back();
 }
@@ -1993,7 +2011,7 @@ void instantiate_function(
 
 	if (!instance.valid) return;
 
-	instance.arguments_types = std::move(arguments);
+	instance.arguments_types = arguments;
 	instance.variables_types = std::move(variables_types);
 	instance.returned_type = return_type;
 }
@@ -2179,6 +2197,7 @@ void material_keywords_handles::let
 		);
 		check_error();
 		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
+		check_error();
 	}
 	else
 	{
@@ -2197,6 +2216,7 @@ void material_keywords_handles::let
 			nullptr,
 			error
 		);
+		if (error != "") func_def.valid = false;
 		check_error();
 	}
 }
@@ -2241,7 +2261,8 @@ void material_keywords_handles::property
 		state.domain,
 		error
 	);
-	
+	check_error();
+
 	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
 	check_error();
 
@@ -2395,6 +2416,7 @@ void material_keywords_handles::_return
 		nullptr,
 		error
 	);
+	if (error != "") func_def.valid = false;
 	check_error();
 }
 
