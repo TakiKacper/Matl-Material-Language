@@ -72,6 +72,9 @@ private:
 const std::string language_version = "0.1";
 
 
+#define check_error() if (error != "") return
+#define throw_error(condition, _error) if (condition) { error = _error; return; } 1
+
 #include <list>
 #include <unordered_map>
 #include <stdexcept>
@@ -150,6 +153,11 @@ public:
 	heterogeneous_map(std::list<_record> __records)
 		: records(std::move(__records)) {};
 
+	inline size_t size() const
+	{
+		return records.size();
+	}
+
 	inline _iterator begin()
 	{
 		return records.begin();
@@ -168,6 +176,16 @@ public:
 	inline _const_iterator end() const
 	{
 		return records.end();
+	}
+
+	inline _record& recent()
+	{
+		return records.back();
+	}
+
+	inline const _record& recent() const
+	{
+		return records.back();
 	}
 
 	template<class _key2>
@@ -464,7 +482,7 @@ struct expression::node
 		const binary_operator*									binary_operator;
 		uint8_t													vector_size;
 		std::vector<uint8_t>									included_vector_components;
-		std::pair<std::string, int>								function_name_and_passed_args;
+		std::pair<std::string, function_definition>*			function;
 		~node_value() {};
 	} value;
 };
@@ -481,6 +499,37 @@ struct variable_definition
 	expression* definition;
 	~variable_definition() { delete definition; }
 };
+using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_solver>;
+
+struct function_instance
+{
+	bool valid;
+	std::vector<const data_type*> arguments_types;
+	std::vector<const data_type*> variables_types;
+	const data_type* returned_type;
+
+	bool args_matching(const std::vector<const data_type*>& args) const
+	{
+		for (int i = 0; i < arguments_types.size(); i++)
+			if (args.at(i) != arguments_types.at(i))
+				return false;
+		return true;
+	}
+
+	std::string translated;
+};
+
+struct function_definition
+{
+	std::vector<std::string> arguments;
+	variables_collection variables;
+	expression* result;
+
+	std::vector<function_instance> instances;
+
+	~function_definition() { delete result; };
+};
+using function_collection = heterogeneous_map<std::string, function_definition, hgm_solver>;
 
 struct property_definition
 {
@@ -698,25 +747,34 @@ std::unordered_map<std::string, translator*> translators;
 
 struct translator
 {
-	using expression_translator = std::string(*)(
+	using expressions_translator = std::string(*)(
 		const expression* const& exp,
 		const material_parsing_state& state
 	);
-	const expression_translator _expression_translator;
+	const expressions_translator _expression_translator;
 
-	using variable_declaration_translator = std::string(*)(
+	using variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
 		const material_parsing_state& state
 	);
-	const variable_declaration_translator _variable_declaration_translator;
+	const variables_declarations_translator _variable_declaration_translator;
+
+	using functions_translator = std::string(*)(
+		const string_ref& name,
+		const function_definition* const& func,
+		const material_parsing_state& state
+	);
+	const functions_translator _functions_translator;
 
 	translator(
 		std::string _language_name,
-		expression_translator __expression_translator,
-		variable_declaration_translator __variable_declaration_translator
+		expressions_translator __expression_translator,
+		variables_declarations_translator __variable_declaration_translator,
+		functions_translator __functions_translator
 	) : _expression_translator(__expression_translator),
-		_variable_declaration_translator(__variable_declaration_translator)
+		_variable_declaration_translator(__variable_declaration_translator),
+		_functions_translator(__functions_translator)
 	{
 		translators.insert({ _language_name, this });
 	};
@@ -884,9 +942,12 @@ struct material_parsing_state
 	int line_counter = 0;
 	int this_line_indentation_spaces = 0;
 
+	bool function_body = false;
+
 	std::vector<std::string> errors;
 
-	heterogeneous_map<std::string, variable_definition, hgm_solver> variables;
+	variables_collection variables;
+	function_collection functions;
 	heterogeneous_map<std::string, property_definition, hgm_solver> properties;
 
 	const parsed_domain* domain = nullptr;
@@ -942,10 +1003,40 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		auto& source = material_source;
 		auto& iterator = state.iterator;
 
-		state.this_line_indentation_spaces = get_spaces(source, iterator);
+		int spaces = get_spaces(source, iterator);
 
-		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
 		if (source.at(iterator) == comment_char) goto _parse_material_next_line;
+		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
+
+		if (state.function_body)
+		{
+			if (spaces == 0 && state.this_line_indentation_spaces == 0)
+			{
+				error = "Expected function body";
+				state.function_body = false;
+				goto _parse_material_handle_error;
+			}
+
+			if (spaces == 0 && state.this_line_indentation_spaces != 0)
+			{
+				error = "Unexpected function end";
+				state.function_body = false;
+				goto _parse_material_handle_error;
+			}
+			
+			if (spaces != state.this_line_indentation_spaces && state.this_line_indentation_spaces != 0)
+			{
+				error = "Indentation level must be consistient";
+				goto _parse_material_handle_error;
+			}
+		}
+		else if (spaces != 0)
+		{
+			error = "Indentation level must be consistient";
+			goto _parse_material_handle_error;
+		}
+
+		state.this_line_indentation_spaces = spaces;
 
 		{
 			string_ref keyword = get_string_ref(source, iterator, error);
@@ -961,7 +1052,6 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			}
 				
 			kh_itr->second(material_source, context_impl, state, error);
-
 			if (error != "") goto _parse_material_handle_error;
 		}
 
@@ -1026,7 +1116,12 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				);
 			break;
 		case directive_type::dump_functions:
-			//TODO
+			for (auto& func : state.functions)
+				result.sources.back() += translator->_functions_translator(
+					func.first,
+					&func.second,
+					state
+				);
 			break;
 		}
 	}
@@ -1084,6 +1179,13 @@ void matl::context::add_custom_using_case_callback(std::string _case, matl::cust
 
 #pragma region Expressions parsing utilities
 
+void instantiate_function(
+	function_definition& func_def,
+	const std::vector<const data_type*> arguments,
+	const function_collection* functions,
+	std::string& error
+);
+
 namespace expressions_parsing_utilities
 {
 	string_ref get_node_str(const std::string& source, size_t& iterator, std::string& error);
@@ -1100,18 +1202,24 @@ namespace expressions_parsing_utilities
 		expression::node* node
 	);
 	void shunting_yard(
-		material_parsing_state& state,
+		const std::string& source,
+		size_t& iterator,
+		int indentation,
+		int& lines_counter,
+		variables_collection* variables,
+		function_collection* functions,
+		bool can_use_symbols,
+		const parsed_domain* domain,
 		expression::node*& new_node,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
-		const std::string& source,
-		size_t& iterator,
 		std::string& error
 	);
 	void validate_node(
-		expression::node* n, 
-		const material_parsing_state& state, 
-		std::vector<const data_type*>& types, 
+		expression::node* n,
+		const parsed_domain* domain,
+		std::vector<const data_type*>& types,
+		const function_collection* functions,
 		std::string& error
 	);
 }
@@ -1284,12 +1392,17 @@ void expressions_parsing_utilities::insert_operator(
 };
 
 void expressions_parsing_utilities::shunting_yard(
-	material_parsing_state& state,
+	const std::string& source,
+	size_t& iterator,
+	int indentation,
+	int& lines_counter,
+	variables_collection* variables,
+	function_collection* functions,
+	bool can_use_symbols,
+	const parsed_domain* domain,
 	expression::node*& new_node,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
-	const std::string& source,
-	size_t& iterator,
 	std::string& error
 )
 {
@@ -1366,10 +1479,9 @@ void expressions_parsing_utilities::shunting_yard(
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
-		auto node_str = get_node_str(source, iterator, error);
-		if (error != "") return;
-
 		new_node = new node{};
+		auto node_str = get_node_str(source, iterator, error);
+		check_error();
 
 		if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
@@ -1411,7 +1523,7 @@ _shunting_yard_loop:
 			get_spaces(source, iterator);
 			auto components = get_string_ref(source, iterator, error);
 
-			if (error != "") return;
+			check_error();
 
 			if (components.size() > 4)
 			{
@@ -1435,7 +1547,7 @@ _shunting_yard_loop:
 		}
 		else if (is_scalar_literal(node_str, error))
 		{
-			if (error != "") return;
+			check_error();
 
 			new_node->type = node_type::scalar_literal;
 			new_node->value.scalar_value = node_str;
@@ -1447,17 +1559,17 @@ _shunting_yard_loop:
 		{
 			new_node->type = node_type::symbol;
 
-			if (state.domain == nullptr)
+			if (!can_use_symbols)
 			{
-				error = "Cannot use symbols since the domain is not loaded yet";
+				error = "Cannot use symbols here";
 				return;
 			}
 
 			node_str.begin++;
 
-			auto itr = state.domain->symbols.find(node_str);
+			auto itr = domain->symbols.find(node_str);
 
-			if (itr == state.domain->symbols.end())
+			if (itr == domain->symbols.end())
 			{
 				error = "No such symbol: " + std::string(node_str);
 				return;
@@ -1471,19 +1583,38 @@ _shunting_yard_loop:
 		else if (is_function_call(source, iterator))
 		{
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
-			if (error != "") return;
+			check_error();
+
+			iterator++; //Jump over the ( char
+			throw_error(is_at_source_end(source, iterator), "Unexpected file end");
 
 			if (args_ammount != 0)
 				args_ammount++;
+			else
+			{
+				get_spaces(source, iterator);
+				if (get_char(source, iterator) != ')')
+					args_ammount = 1;
+			}
+
+			auto itr = functions->find(node_str);
+			
+			throw_error(itr == functions->end(), "No such function: " + std::string(node_str));
+
+			throw_error(itr->second.arguments.size() != args_ammount,
+				"Function " + std::string(node_str)
+				+ " takes " + std::to_string(itr->second.arguments.size())
+				+ " arguments, not " + std::to_string(args_ammount);
+			);
 
 			new_node->type = node_type::function;
-			new_node->value.function_name_and_passed_args = {
-				std::move(node_str),
-				args_ammount
-			};
+			new_node->value.function = &(*itr);
+
+			throw_error(new_node->value.function->second.result == nullptr,
+				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
+			);
 
 			insert_operator(operators, output, new_node);
-			iterator++;	//Jump over the ( char
 
 			accepts_right_unary_operator = true;
 		}
@@ -1491,8 +1622,8 @@ _shunting_yard_loop:
 		{
 			new_node->type = node_type::variable;
 
-			auto itr = state.variables.find(node_str);
-			if (itr == state.variables.end())
+			auto itr = variables->find(node_str);
+			if (itr == variables->end())
 			{
 				error = "No such variable: " + std::string(node_str);
 				return;
@@ -1518,7 +1649,7 @@ _shunting_yard_loop:
 
 		if (is_at_source_end(source, iterator_2)) goto _shunting_yard_end;
 
-		if (spaces > state.this_line_indentation_spaces)
+		if (spaces > indentation)
 		{
 			std::string temp_error;
 
@@ -1528,7 +1659,7 @@ _shunting_yard_loop:
 			if (temp_error != "" || keywords_handles.find(str) != keywords_handles.end())
 				goto _shunting_yard_end;
 			
-			state.line_counter++;
+			lines_counter++;
 			iterator = iterator_2;
 			goto _shunting_yard_loop;	
 		}
@@ -1546,8 +1677,9 @@ _shunting_yard_end:
 
 inline void expressions_parsing_utilities::validate_node(
 	expression::node* n,
-	const material_parsing_state& state, 
+	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
+	const function_collection* functions,
 	std::string& error
 )
 {
@@ -1601,7 +1733,7 @@ inline void expressions_parsing_utilities::validate_node(
 
 			pop_types(1);
 			types.push_back(at.returned_type);
-			return;			
+			return;
 		}
 		std::string error = "Cannot " + op->operation_display_name + " type: " + operand->name;
 	};
@@ -1613,12 +1745,16 @@ inline void expressions_parsing_utilities::validate_node(
 	case node::node_type::variable:
 	{
 		auto& var = n->value.variable;
+
+		throw_error(var->second.return_type == nullptr, 
+			"Cannot use variable: " + std::string(var->first) + " since it's type could not be discern");
+
 		types.push_back(var->second.return_type);
 		break;
 	}
 	case node::node_type::symbol:
 	{
-		if (state.domain == nullptr)
+		if (domain == nullptr)
 		{
 			error = "Cannot use symbols since the domain is not loaded yet";
 			return;
@@ -1628,12 +1764,12 @@ inline void expressions_parsing_utilities::validate_node(
 		break;
 	}
 	case node::node_type::binary_operator:
-		handle_binary_operator(n->value.binary_operator); 
-		if (error != "") return;
+		handle_binary_operator(n->value.binary_operator);
+		check_error();
 		break;
 	case node::node_type::unary_operator:
-		handle_unary_operator(n->value.unary_operator); 
-		if (error != "") return;
+		handle_unary_operator(n->value.unary_operator);
+		check_error();
 		break;
 	case node::node_type::vector_component_access:
 	{
@@ -1687,112 +1823,93 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::function:
 	{
-		/*const auto& func_name = n->value.function_name_and_passed_args.first;
-
-		function_definition* func_def = nullptr;
-		for (auto& func_coll : functions)
-		{
-			auto itr = func_coll->find(func_name);
-			if (itr != func_coll->end())
-			{
-				func_def = &itr->second;
-				break;
-			}
-		}
-
-		if (func_def == nullptr)
-		{
-			error_text = "No such function: " + func_name;
-			break;
-		}
-
-		if (n->value.function_name_and_passed_args.second != func_def->arguments.size())
-		{
-			error_text = "Function " + func_name
-				+ " takes " + std::to_string(func_def->arguments.size())
-				+ " arguments, not " + std::to_string(n->value.function_name_and_passed_args.second);
-			break;
-		}
+		auto& func_name = n->value.function->first;
+		auto& func_def = n->value.function->second;
 
 		std::vector<const data_type*> arguments_types;
 
-		for (size_t i = 0; i < func_def->arguments.size(); i++)
+		for (size_t i = 0; i < func_def.arguments.size(); i++)
 			arguments_types.push_back(get_type(i));
 
 		auto invalid_arguments_error = [&]()
 		{
-			error_text = "Function " + func_name + " is invalid for arguments: ";
+			auto the_error = "Function " + func_name + " is invalid for arguments: ";
 			for (size_t i = arguments_types.size() - 1; i != -1; i--)
 			{
-				error_text += arguments_types.at(i)->name;
-				if (i != 0) error_text += ", ";
+				the_error += arguments_types.at(i)->name;
+				if (i != 0) the_error += ", ";
 			}
+			return the_error;
 		};
 
-		for (auto& func_instance : func_def->instances)
+		for (auto& func_instance : func_def.instances)
 		{
-			if (func_instance.match_args(arguments_types))
+			if (func_instance.args_matching(arguments_types))
 			{
 				if (func_instance.valid)
 				{
-					pop_types(func_def->arguments.size());
+					pop_types(func_def.arguments.size());
 					types.push_back(func_instance.returned_type);
-					goto end_of_function_check;
+					return;
 				}
 
-				invalid_arguments_error();
-				break;
+				throw_error(true, invalid_arguments_error());
 			}
 		}
 
-		{
-			std::vector<std::string> instantiating_errors;
+		instantiate_function(
+			func_def,
+			arguments_types,
+			functions,
+			error
+		);
 
-			auto& func_instance = instantiate_function(
-				func_def,
-				arguments_types,
-				variables,
-				functions,
-				instantiating_errors
-			);
+		if (error != "")
+			error = invalid_arguments_error() + '\n' + error;
+		check_error();
 
-			if (func_instance.valid)
-			{
-				pop_types(func_def->arguments.size());
-				types.push_back(func_instance.returned_type);
-				break;
-			}
+		auto& instance = func_def.instances.back();
 
-			invalid_arguments_error();
-
-			for (auto& error : instantiating_errors)
-			{
-				error_text += "\n\t";
-				error_text += error;
-			}
-		}
-
-	end_of_function_check:
-		break;*/
+		pop_types(func_def.arguments.size());
+		types.push_back(instance.returned_type);
 	}
 	}
-
-	//if (error_text.size() != 0)
-	//	return false;
 }
 
 #pragma endregion
 
 #pragma region Expression parsing
 
-expression* get_expression(const std::string& source, size_t& iterator, material_parsing_state& state, std::string& error)
+expression* get_expression(
+	const std::string& source, 
+	size_t& iterator, 
+	const int& indentation,
+	int& line_counter,
+	variables_collection* variables,
+	function_collection* functions,
+	const parsed_domain* domain,	//optional, nullptr if symbols are not allowed
+	std::string& error
+)
 {
 	expression::node* new_node = nullptr;
 
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
-	expressions_parsing_utilities::shunting_yard(state, new_node, output, operators, source, iterator, error);
+	expressions_parsing_utilities::shunting_yard(
+		source, 
+		iterator, 
+		indentation,
+		line_counter,
+		variables,
+		functions,
+		domain != nullptr,
+		domain,
+		new_node,
+		output,
+		operators,
+		error
+	);
 
 	if (error != "")
 	{
@@ -1812,7 +1929,7 @@ expression* get_expression(const std::string& source, size_t& iterator, material
 	return exp;
 }
 
-const data_type* validate_expression(const expression* exp, const material_parsing_state& state, std::string& error)
+const data_type* validate_expression(const expression* exp, const parsed_domain* domain, const function_collection* functions, std::string& error)
 {
 	using node = expression::node;
 	using data_type = data_type;
@@ -1823,9 +1940,8 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 
 	for (auto& n : exp->nodes)
 	{
-		expressions_parsing_utilities::validate_node(n, state, types, error);
-		if (error != "")
-			break;
+		expressions_parsing_utilities::validate_node(n, domain, types, functions, error);
+		if (error != "") break;
 	}
 
 	if (error != "") return nullptr;
@@ -1836,6 +1952,58 @@ const data_type* validate_expression(const expression* exp, const material_parsi
 	}
 
 	return types.back();
+}
+
+void instantiate_function(
+	function_definition& func_def,
+	const std::vector<const data_type*> arguments,
+	const function_collection* functions,
+	std::string& error
+)
+{
+	auto itr = func_def.variables.begin();
+	for (auto arg = arguments.rbegin(); arg != arguments.rend(); arg++)
+	{
+		itr->second.return_type = *arg;
+		itr++;
+	}
+
+	std::vector<const data_type*> variables_types;
+
+	while (itr != func_def.variables.end())
+	{
+		auto& var = itr->second;
+
+		std::string error2;
+
+		auto type = validate_expression(var.definition, nullptr, functions, error2);
+		var.return_type = type;
+
+		variables_types.push_back(var.return_type);
+
+		if (error2 != "")
+		{
+			error += '\t';
+			error += error2;
+			error += '\n';
+		}
+
+		itr++;
+	}
+
+	std::string error2;
+	auto return_type = validate_expression(func_def.result, nullptr, functions, error2);
+
+	func_def.instances.push_back({});
+	auto& instance = func_def.instances.back();
+
+	instance.valid = error == "";
+
+	if (!instance.valid) return;
+
+	instance.arguments_types = std::move(arguments);
+	instance.variables_types = std::move(variables_types);
+	instance.returned_type = return_type;
 }
 
 #pragma endregion
@@ -1983,7 +2151,7 @@ void material_keywords_handles::let
 	get_spaces(source, iterator);
 	auto var_name = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	if (var_name.at(0) == symbols_prefix)
 		error = "Cannot declare symbols in material";
@@ -1994,22 +2162,68 @@ void material_keywords_handles::let
 	if (assign_operator != '=')
 		error = "Expected '='";
 
-	if (error != "") return;
+	check_error();
 
-	auto& var_def = state.variables.insert({ var_name, {} })->second;
-	var_def.definition = get_expression(source, iterator, state, error);
-	var_def.return_type = validate_expression(var_def.definition, state, error);
+	auto check_if_already_exists = [&](const variables_collection& collection)
+	{
+		throw_error(collection.find(var_name) != collection.end(), 
+			"Variable " + std::string(var_name) + " already exists");
+	};
+
+	if (!state.function_body)
+	{
+		check_if_already_exists(state.variables);
+
+		auto& var_def = state.variables.insert({ var_name, {} })->second;
+		var_def.definition = get_expression(
+			source, 
+			iterator, 
+			state.this_line_indentation_spaces,
+			state.line_counter,
+			&state.variables,
+			&state.functions,
+			state.domain,
+			error
+		);
+		check_error();
+		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
+	}
+	else
+	{
+		auto& func_def = state.functions.recent().second;
+
+		check_if_already_exists(func_def.variables);
+
+		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
+		var_def.definition = get_expression(
+			source,
+			iterator,
+			state.this_line_indentation_spaces,
+			state.line_counter,
+			&func_def.variables,
+			&state.functions,
+			nullptr,
+			error
+		);
+		check_error();
+	}
 }
 
 void material_keywords_handles::property
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	if (state.function_body)
+	{
+		error = "Cannot use property in this scope";
+		return;
+	}
+
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
 	auto property_name = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
@@ -2025,10 +2239,19 @@ void material_keywords_handles::property
 	}
 
 	auto& prop = state.properties.insert({ property_name, {} })->second;
-	prop.definition = get_expression(source, iterator, state, error);
+	prop.definition = get_expression(
+		source,
+		iterator,
+		state.this_line_indentation_spaces,
+		state.line_counter,
+		&state.variables,
+		&state.functions,
+		state.domain,
+		error
+	);
 	
-	auto type = validate_expression(prop.definition, state, error);
-	if (error != "") return;
+	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
+	check_error();
 
 	if (itr->second != type)
 		error = "Invalid property type; expected: " + itr->second->name + " recived: " + type->name;
@@ -2037,12 +2260,18 @@ void material_keywords_handles::property
 void material_keywords_handles::_using
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	if (state.function_body)
+	{
+		error = "Cannot use using in this scope";
+		return;
+	}
+
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
 	auto target = get_string_ref(source, iterator, error);
 
-	if (error != "") return;
+	check_error();
 
 	if (target == "domain")
 	{
@@ -2056,7 +2285,7 @@ void material_keywords_handles::_using
 		if (itr == context.domains.end())
 			error = "No such domain: " + std::string(domain_name);
 
-		if (error != "") return;
+		check_error();
 
 		state.domain = itr->second;
 	}
@@ -2064,9 +2293,8 @@ void material_keywords_handles::_using
 	{
 		//Library
 	}
-	else
+	else //Call custom case
 	{
-		//Call custom
 		auto itr = context.custom_using_cases.find(target);
 		if (itr == context.custom_using_cases.end())
 		{
@@ -2085,15 +2313,102 @@ void material_keywords_handles::_using
 void material_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	auto& iterator = state.iterator;
 
+	get_spaces(source, iterator);
+	std::string name = get_string_ref(source, iterator, error);
+	if (name == "") error = "Expected function name";
+	check_error();
+
+	throw_error(state.functions.find(name) != state.functions.end(),
+		"Function " + std::string(name) + " already exists");
+
+	{
+		get_spaces(source, iterator);
+		if (is_at_source_end(source, iterator))
+		{
+			error = "";
+			return;
+		}
+
+		if (source.at(iterator) != '(')
+		{
+			error = "Expected (";
+			return;
+		}
+
+		iterator++;
+	}
+
+	std::vector<std::string> arguments;
+
+	while (true)
+	{
+		get_spaces(source, iterator);
+
+		if (source.at(iterator) == ')') break;
+
+		arguments.push_back(get_string_ref(source, iterator, error));
+		if (arguments.back() == "") error = "Expected argument name";
+		check_error();
+
+		get_spaces(source, iterator);
+
+		if (source.at(iterator) == ')') break;
+
+		throw_error(source.at(iterator) != ',', "Expected comma");
+
+		iterator++;
+	}
+
+	iterator++;
+	get_spaces(source, iterator);
+	
+	if (!is_at_line_end(source, iterator))
+	{
+		error = "Expected line end";
+		return;
+	}
+
+	auto& func_def = state.functions.insert({ name, {} })->second;
+	func_def.arguments = std::move(arguments);
+
+	for (auto& arg : func_def.arguments)
+		func_def.variables.insert({ arg, {} });
+
+	state.function_body = true;
 }
 
 void material_keywords_handles::_return
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	auto& iterator = state.iterator;
+	auto& func_def = state.functions.recent().second;
 
+	if (!state.function_body)
+	{
+		error = "Cannot return value from this scope";
+		return;
+	}
+
+	state.function_body = false;
+
+	func_def.result = get_expression(
+		source,
+		iterator,
+		state.this_line_indentation_spaces,
+		state.line_counter,
+		&func_def.variables,
+		&state.functions,
+		nullptr,
+		error
+	);
+	check_error();
 }
 
 #pragma endregion
+
+#undef check_error
+#undef throw_error
 
 #endif
