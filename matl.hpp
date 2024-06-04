@@ -2293,9 +2293,8 @@ void material_keywords_handles::_using
 	{
 		//Library
 	}
-	else
+	else //Call custom case
 	{
-		//Call custom
 		auto itr = context.custom_using_cases.find(target);
 		if (itr == context.custom_using_cases.end())
 		{
