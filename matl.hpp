@@ -254,7 +254,8 @@ inline bool is_operator(const char& c)
 {
 	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
 		|| c == '>' || c == '<'
-		|| c == ')' || c == '(' || c == '.' || c == ',');
+		|| c == ')' || c == '(' || c == '.' || c == ',' 
+		|| c == '#');
 }
 
 inline bool is_whitespace(const char& c)
@@ -338,12 +339,20 @@ inline string_ref get_string_ref(const std::string& source, size_t& iterator, st
 	return string_ref(source, begin, iterator);
 }
 
+extern const char comment_char;
+
 inline string_ref get_rest_of_line(const std::string& source, size_t& iterator)
 {
 	size_t begin = iterator;
 
-	while (!is_at_line_end(source, iterator))
+	while (!is_at_line_end(source, iterator) && get_char(source, iterator) != comment_char)
 		iterator++;
+
+	if (source.at(iterator - 1) == comment_char)
+		iterator -= 2;
+
+	while (is_whitespace(source.at(iterator - 1)))
+		iterator--;
 
 	return { source, begin, iterator };
 }
@@ -1061,9 +1070,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		get_to_new_line(material_source, state.iterator);
 	}
 
-	for (auto& prop : state.domain->properties)
-		if (state.properties.find(prop.first) == state.properties.end())
-			state.errors.push_back("[0] Missing property: " + prop.first);
+	if (state.domain != nullptr)
+		for (auto& prop : state.domain->properties)
+			if (state.properties.find(prop.first) == state.properties.end())
+				state.errors.push_back("[0] Missing property: " + prop.first);
 
 	if (state.errors.size() != 0)
 	{
@@ -1077,7 +1087,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	{
 		parsed_material result;
 		result.success = false;
-		result.errors = { "Material does not specify the domain" };
+		result.errors = { "[0] Material does not specify the domain" };
 		return result;
 	}
 
@@ -1476,6 +1486,9 @@ _shunting_yard_loop:
 		new_node = new node{};
 		auto node_str = get_node_str(source, iterator, error);
 		check_error();
+
+		if (node_str.at(0) == comment_char)
+			goto _shunting_yard_end;
 
 		if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
@@ -2224,6 +2237,8 @@ void material_keywords_handles::let
 void material_keywords_handles::property
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
+	throw_error(state.domain == nullptr, "Cannot use property since the domain has not yet been specified");
+
 	if (state.function_body)
 	{
 		error = "Cannot use property in this scope";
