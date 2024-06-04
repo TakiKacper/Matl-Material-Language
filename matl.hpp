@@ -1590,6 +1590,9 @@ _shunting_yard_loop:
 			new_node->type = node_type::function;
 			new_node->value.function = &(*itr);
 
+			throw_error(new_node->value.function->second.result == nullptr,
+				"Cannot use function: " + std::string(node_str) + " because it is missing return statement");
+
 			insert_operator(operators, output, new_node);
 
 			accepts_right_unary_operator = true;
