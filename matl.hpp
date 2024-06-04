@@ -13,12 +13,6 @@ namespace matl
 {
 	std::string get_language_version();
 
-	struct file_request_response
-	{
-		bool success;
-		std::string source;
-	};
-
 	struct parsed_material
 	{
 		bool success = false;
@@ -32,7 +26,6 @@ namespace matl
 		std::vector<std::string> errors;
 	};
 
-	using file_request_callback = file_request_response(*)(const std::string& file_name);
 	using custom_using_case_callback = void(std::string args, std::string& error);
 
 	class context;
@@ -53,7 +46,6 @@ private:
 	friend domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 public:
-	void set_library_request_callback(file_request_callback callback);
 	void add_custom_using_case_callback(std::string _case, custom_using_case_callback callback);
 
 private:
@@ -786,8 +778,6 @@ struct translator
 
 struct context_public_implementation
 {
-	matl::file_request_callback library_rc = nullptr;
-
 	heterogeneous_map<std::string, parsed_domain*, hgm_solver> domains;
 	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_solver> custom_using_cases;
 
@@ -1163,11 +1153,6 @@ void matl::destroy_context(context*& context)
 {
 	delete context;
 	context = nullptr;
-}
-
-void matl::context::set_library_request_callback(file_request_callback callback)
-{
-	impl->impl.library_rc = callback;
 }
 
 void matl::context::add_custom_using_case_callback(std::string _case, matl::custom_using_case_callback callback)
