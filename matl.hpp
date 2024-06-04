@@ -153,6 +153,11 @@ public:
 	heterogeneous_map(std::list<_record> __records)
 		: records(std::move(__records)) {};
 
+	inline size_t size() const
+	{
+		return records.size();
+	}
+
 	inline _iterator begin()
 	{
 		return records.begin();
@@ -500,6 +505,7 @@ struct function_instance
 {
 	bool valid;
 	std::vector<const data_type*> arguments_types;
+	std::vector<const data_type*> variables_types;
 	const data_type* returned_type;
 
 	bool args_matching(const std::vector<const data_type*>& args) const
@@ -741,25 +747,34 @@ std::unordered_map<std::string, translator*> translators;
 
 struct translator
 {
-	using expression_translator = std::string(*)(
+	using expressions_translator = std::string(*)(
 		const expression* const& exp,
 		const material_parsing_state& state
 	);
-	const expression_translator _expression_translator;
+	const expressions_translator _expression_translator;
 
-	using variable_declaration_translator = std::string(*)(
+	using variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
 		const material_parsing_state& state
 	);
-	const variable_declaration_translator _variable_declaration_translator;
+	const variables_declarations_translator _variable_declaration_translator;
+
+	using functions_translator = std::string(*)(
+		const string_ref& name,
+		const function_definition* const& func,
+		const material_parsing_state& state
+	);
+	const functions_translator _functions_translator;
 
 	translator(
 		std::string _language_name,
-		expression_translator __expression_translator,
-		variable_declaration_translator __variable_declaration_translator
+		expressions_translator __expression_translator,
+		variables_declarations_translator __variable_declaration_translator,
+		functions_translator __functions_translator
 	) : _expression_translator(__expression_translator),
-		_variable_declaration_translator(__variable_declaration_translator)
+		_variable_declaration_translator(__variable_declaration_translator),
+		_functions_translator(__functions_translator)
 	{
 		translators.insert({ _language_name, this });
 	};
@@ -1101,7 +1116,12 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				);
 			break;
 		case directive_type::dump_functions:
-			//TODO
+			for (auto& func : state.functions)
+				result.sources.back() += translator->_functions_translator(
+					func.first,
+					&func.second,
+					state
+				);
 			break;
 		}
 	}
@@ -1591,7 +1611,8 @@ _shunting_yard_loop:
 			new_node->value.function = &(*itr);
 
 			throw_error(new_node->value.function->second.result == nullptr,
-				"Cannot use function: " + std::string(node_str) + " because it is missing return statement");
+				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
+			);
 
 			insert_operator(operators, output, new_node);
 
@@ -1947,6 +1968,8 @@ void instantiate_function(
 		itr++;
 	}
 
+	std::vector<const data_type*> variables_types;
+
 	while (itr != func_def.variables.end())
 	{
 		auto& var = itr->second;
@@ -1955,6 +1978,8 @@ void instantiate_function(
 
 		auto type = validate_expression(var.definition, nullptr, functions, error2);
 		var.return_type = type;
+
+		variables_types.push_back(var.return_type);
 
 		if (error2 != "")
 		{
@@ -1976,7 +2001,8 @@ void instantiate_function(
 
 	if (!instance.valid) return;
 
-	instance.arguments_types = arguments;
+	instance.arguments_types = std::move(arguments);
+	instance.variables_types = std::move(variables_types);
 	instance.returned_type = return_type;
 }
 
