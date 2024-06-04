@@ -994,6 +994,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		auto& iterator = state.iterator;
 
 		int spaces = get_spaces(source, iterator);
+		if (is_at_source_end(material_source, state.iterator)) break;
 
 		if (source.at(iterator) == comment_char) goto _parse_material_next_line;
 		if (is_at_line_end(source, iterator)) goto _parse_material_next_line;
@@ -1058,6 +1059,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		get_to_new_line(material_source, state.iterator);
 	}
 
+	for (auto& prop : state.domain->properties)
+		if (state.properties.find(prop.first) == state.properties.end())
+			state.errors.push_back("[0] Missing property: " + prop.first);
+
 	if (state.errors.size() != 0)
 	{
 		parsed_material result;
@@ -1092,11 +1097,13 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			result.sources.push_back("");
 			break;
 		case directive_type::dump_property:
+		{
 			result.sources.back() += translator->_expression_translator(
 				state.properties.at(directive.payload).definition,
 				state
 			);
 			break;
+		}
 		case directive_type::dump_variables:
 			for (auto& var : state.variables)
 				result.sources.back() += translator->_variable_declaration_translator(
