@@ -2164,8 +2164,16 @@ void material_keywords_handles::let
 
 	check_error();
 
+	auto check_if_already_exists = [&](const variables_collection& collection)
+	{
+		throw_error(collection.find(var_name) != collection.end(), 
+			"Variable " + std::string(var_name) + " already exists");
+	};
+
 	if (!state.function_body)
 	{
+		check_if_already_exists(state.variables);
+
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
 		var_def.definition = get_expression(
 			source, 
@@ -2183,6 +2191,9 @@ void material_keywords_handles::let
 	else
 	{
 		auto& func_def = state.functions.recent().second;
+
+		check_if_already_exists(func_def.variables);
+
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 		var_def.definition = get_expression(
 			source,
@@ -2309,6 +2320,9 @@ void material_keywords_handles::func
 	std::string name = get_string_ref(source, iterator, error);
 	if (name == "") error = "Expected function name";
 	check_error();
+
+	throw_error(state.functions.find(name) != state.functions.end(),
+		"Function " + std::string(name) + " already exists");
 
 	{
 		get_spaces(source, iterator);
