@@ -1,7 +1,7 @@
 #pragma once
 
 //DEFINE MATL_IMPLEMENTATION
-//In order to implement matl in given translation unit
+//In order to implement parser in this translation unit
 
 #include <string>
 #include <vector>
@@ -64,7 +64,7 @@ private:
 const std::string language_version = "0.1";
 
 
-#define check_error() if (error != "") return
+#define rethrow_error() if (error != "") return
 #define throw_error(condition, _error) if (condition) { error = _error; return; } 1
 
 #include <list>
@@ -366,7 +366,7 @@ inline void get_to_new_line(const std::string& source, size_t& iterator)
 
 #pragma endregion
 
-#pragma region Matl types
+#pragma region Types
 
 struct data_type;
 struct unary_operator;
@@ -1485,7 +1485,7 @@ _shunting_yard_loop:
 	{
 		new_node = new node{};
 		auto node_str = get_node_str(source, iterator, error);
-		check_error();
+		rethrow_error();
 
 		if (node_str.at(0) == comment_char)
 			goto _shunting_yard_end;
@@ -1530,7 +1530,7 @@ _shunting_yard_loop:
 			get_spaces(source, iterator);
 			auto components = get_string_ref(source, iterator, error);
 
-			check_error();
+			rethrow_error();
 
 			if (components.size() > 4)
 			{
@@ -1554,7 +1554,7 @@ _shunting_yard_loop:
 		}
 		else if (is_scalar_literal(node_str, error))
 		{
-			check_error();
+			rethrow_error();
 
 			new_node->type = node_type::scalar_literal;
 			new_node->value.scalar_value = node_str;
@@ -1590,7 +1590,7 @@ _shunting_yard_loop:
 		else if (is_function_call(source, iterator))
 		{
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
-			check_error();
+			rethrow_error();
 
 			iterator++; //Jump over the ( char
 			throw_error(is_at_source_end(source, iterator), "Unexpected file end");
@@ -1799,11 +1799,11 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::binary_operator:
 		handle_binary_operator(n->value.binary_operator);
-		check_error();
+		rethrow_error();
 		break;
 	case node::node_type::unary_operator:
 		handle_unary_operator(n->value.unary_operator);
-		check_error();
+		rethrow_error();
 		break;
 	case node::node_type::vector_component_access:
 	{
@@ -1894,7 +1894,7 @@ inline void expressions_parsing_utilities::validate_node(
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
-		check_error();
+		rethrow_error();
 
 		auto& instance = func_def.instances.back();
 
@@ -2174,7 +2174,7 @@ void material_keywords_handles::let
 	get_spaces(source, iterator);
 	auto var_name = get_string_ref(source, iterator, error);
 
-	check_error();
+	rethrow_error();
 
 	if (var_name.at(0) == symbols_prefix)
 		error = "Cannot declare symbols in material";
@@ -2185,7 +2185,7 @@ void material_keywords_handles::let
 	if (assign_operator != '=')
 		error = "Expected '='";
 
-	check_error();
+	rethrow_error();
 
 	auto check_if_already_exists = [&](const variables_collection& collection)
 	{
@@ -2208,9 +2208,9 @@ void material_keywords_handles::let
 			state.domain,
 			error
 		);
-		check_error();
+		rethrow_error();
 		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
-		check_error();
+		rethrow_error();
 	}
 	else
 	{
@@ -2230,7 +2230,7 @@ void material_keywords_handles::let
 			error
 		);
 		if (error != "") func_def.valid = false;
-		check_error();
+		rethrow_error();
 	}
 }
 
@@ -2250,7 +2250,7 @@ void material_keywords_handles::property
 	get_spaces(source, iterator);
 	auto property_name = get_string_ref(source, iterator, error);
 
-	check_error();
+	rethrow_error();
 
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
@@ -2276,10 +2276,10 @@ void material_keywords_handles::property
 		state.domain,
 		error
 	);
-	check_error();
+	rethrow_error();
 
 	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
-	check_error();
+	rethrow_error();
 
 	if (itr->second != type)
 		error = "Invalid property type; expected: " + itr->second->name + " recived: " + type->name;
@@ -2299,7 +2299,7 @@ void material_keywords_handles::_using
 	get_spaces(source, iterator);
 	auto target = get_string_ref(source, iterator, error);
 
-	check_error();
+	rethrow_error();
 
 	if (target == "domain")
 	{
@@ -2313,7 +2313,7 @@ void material_keywords_handles::_using
 		if (itr == context.domains.end())
 			error = "No such domain: " + std::string(domain_name);
 
-		check_error();
+		rethrow_error();
 
 		state.domain = itr->second;
 	}
@@ -2346,7 +2346,7 @@ void material_keywords_handles::func
 	get_spaces(source, iterator);
 	std::string name = get_string_ref(source, iterator, error);
 	if (name == "") error = "Expected function name";
-	check_error();
+	rethrow_error();
 
 	throw_error(state.functions.find(name) != state.functions.end(),
 		"Function " + std::string(name) + " already exists");
@@ -2378,7 +2378,7 @@ void material_keywords_handles::func
 
 		arguments.push_back(get_string_ref(source, iterator, error));
 		if (arguments.back() == "") error = "Expected argument name";
-		check_error();
+		rethrow_error();
 
 		get_spaces(source, iterator);
 
@@ -2432,7 +2432,7 @@ void material_keywords_handles::_return
 		error
 	);
 	if (error != "") func_def.valid = false;
-	check_error();
+	rethrow_error();
 }
 
 #pragma endregion
