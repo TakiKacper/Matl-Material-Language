@@ -549,7 +549,7 @@ struct function_definition
 	variables_collection variables;
 	expression* result;
 
-	std::vector<function_instance> instances;
+	std::list<function_instance> instances;
 
 	~function_definition() { delete result; };
 };
@@ -793,6 +793,7 @@ struct translator
 	using functions_translator = std::string(*)(
 		const string_ref& name,
 		const function_definition* const& func,
+		const function_instance* const& instance,
 		const material_parsing_state& state
 	);
 	const functions_translator _functions_translator;
@@ -1120,6 +1121,17 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 
 #pragma region Material parsing
 
+struct used_function_instance_info
+{
+	string_ref library_name;
+	string_ref function_name;
+	function_definition* func_def;
+
+	used_function_instance_info(string_ref _library_name, string_ref _function_name, function_definition* _func_def) :
+		library_name(_library_name), function_name(_function_name), func_def(_func_def) {};
+};
+using used_functions_instances = std::unordered_map<function_instance*, used_function_instance_info>;
+
 struct material_parsing_state
 {
 	size_t iterator = 0;
@@ -1135,9 +1147,7 @@ struct material_parsing_state
 	libraries_collection libraries;
 	heterogeneous_map<std::string, property_definition, hgm_solver> properties;
 
-	std::vector<
-		std::pair<function_instance*, std::pair<std::string, function_definition>*>
-	> ever_used_functions_instances;
+	used_functions_instances ever_used_functions;
 
 	const parsed_domain* domain = nullptr;
 };
@@ -1313,10 +1323,11 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				);
 			break;
 		case directive_type::dump_functions:
-			for (auto& func : state.ever_used_functions_instances)
+			for (auto& func : state.ever_used_functions)
 				result.sources.back() += translator->_functions_translator(
-					func.second->first,
-					&func.second->second,
+					func.second.function_name,
+					func.second.func_def,
+					func.first,
 					state
 				);
 			break;
@@ -1375,6 +1386,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
+	used_functions_instances* used_func_instances,
 	std::string& error
 );
 
@@ -1413,6 +1425,7 @@ namespace expressions_parsing_utilities
 		const parsed_domain* domain,
 		std::vector<const data_type*>& types,
 		const function_collection* functions,
+		used_functions_instances* used_func_instances,
 		std::string& error
 	);
 }
@@ -1944,6 +1957,7 @@ inline void expressions_parsing_utilities::validate_node(
 	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
 	const function_collection* functions,
+	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2096,6 +2110,9 @@ inline void expressions_parsing_utilities::validate_node(
 				{
 					pop_types(func_def.arguments.size());
 					types.push_back(func_instance.returned_type);
+
+					used_func_instances->insert({ &func_instance, { func_name, func_name, &func_def } });
+
 					return;
 				}
 
@@ -2107,8 +2124,11 @@ inline void expressions_parsing_utilities::validate_node(
 			func_def,
 			arguments_types,
 			functions,
+			used_func_instances,
 			error
 		);
+
+		used_func_instances->insert({ &func_def.instances.back(), { func_name, func_name, &func_def } });
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
@@ -2177,7 +2197,13 @@ expression* get_expression(
 	return exp;
 }
 
-const data_type* validate_expression(const expression* exp, const parsed_domain* domain, const function_collection* functions, std::string& error)
+const data_type* validate_expression(
+	const expression* exp,
+	const parsed_domain* domain,
+	const function_collection* functions,
+	used_functions_instances* used_func_instances,
+	std::string& error
+)
 {
 	using node = expression::node;
 	using data_type = data_type;
@@ -2188,7 +2214,7 @@ const data_type* validate_expression(const expression* exp, const parsed_domain*
 
 	for (auto& n : exp->nodes)
 	{
-		expressions_parsing_utilities::validate_node(n, domain, types, functions, error);
+		expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
 		if (error != "") break;
 	}
 
@@ -2201,6 +2227,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
+	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2219,7 +2246,7 @@ void instantiate_function(
 
 		std::string error2;
 
-		auto type = validate_expression(var.definition, nullptr, functions, error2);
+		auto type = validate_expression(var.definition, nullptr, functions, used_func_instances, error2);
 		var.return_type = type;
 
 		variables_types.push_back(var.return_type);
@@ -2235,7 +2262,7 @@ void instantiate_function(
 	}
 
 	std::string error2;
-	auto return_type = validate_expression(func_def.result, nullptr, functions, error2);
+	auto return_type = validate_expression(func_def.result, nullptr, functions, used_func_instances, error2);
 
 	func_def.instances.push_back({});
 	auto& instance = func_def.instances.back();
@@ -2443,7 +2470,7 @@ void material_keywords_handles::let
 			error
 		);
 		rethrow_error();
-		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
+		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, &state.ever_used_functions, error);
 		rethrow_error();
 	}
 	else
@@ -2514,7 +2541,7 @@ void material_keywords_handles::property
 	);
 	rethrow_error();
 
-	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
+	auto type = validate_expression(prop.definition, state.domain, &state.functions, &state.ever_used_functions, error);
 	rethrow_error();
 
 	if (itr->second != type)
