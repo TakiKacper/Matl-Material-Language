@@ -2025,7 +2025,7 @@ inline void expressions_parsing_utilities::validate_node(
 		auto& var = n->value.variable;
 
 		throw_error(var->second.return_type == nullptr, 
-			"Cannot use variable: " + std::string(var->first) + " since it's type could not be discern");
+			"Cannot use variable " + std::string(var->first) + " since it's type could not be discern");
 
 		types.push_back(var->second.return_type);
 		break;
@@ -2103,16 +2103,12 @@ inline void expressions_parsing_utilities::validate_node(
 		{
 			if (func_instance.args_matching(arguments_types))
 			{
-				if (func_instance.valid)
-				{
-					pop_types(func_def.arguments.size());
-					types.push_back(func_instance.returned_type);
+				throw_error(!func_instance.valid, invalid_arguments_error());
 
-					used_func_instances->insert({ &func_instance, { func_name, &func_def } });
-					return;
-				}
+				pop_types(func_def.arguments.size());
+				types.push_back(func_instance.returned_type);
 
-				throw_error(true, invalid_arguments_error());
+				used_func_instances->insert({ &func_instance, { func_name, &func_def } });
 			}
 		}
 
@@ -2228,7 +2224,7 @@ void instantiate_function(
 )
 {
 	auto itr = func_def.variables.begin();
-	for (auto arg = arguments.rbegin(); arg != arguments.rend(); arg++)
+	for (auto arg = arguments.begin(); arg != arguments.end(); arg++)
 	{
 		itr->second.return_type = *arg;
 		itr++;
@@ -2247,11 +2243,13 @@ void instantiate_function(
 
 		variables_types.push_back(var.return_type);
 
+		if (error2 != "" && error != "")
+			error += '\n';
+
 		if (error2 != "")
 		{
 			error += '\t';
 			error += error2;
-			error += '\n';
 		}
 
 		itr++;
@@ -2264,10 +2262,10 @@ void instantiate_function(
 	auto& instance = func_def.instances.back();
 
 	instance.valid = error == "";
+	instance.arguments_types = arguments;
 
 	if (!instance.valid) return;
 
-	instance.arguments_types = arguments;
 	instance.variables_types = std::move(variables_types);
 	instance.returned_type = return_type;
 }
