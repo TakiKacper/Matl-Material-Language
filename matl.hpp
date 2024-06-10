@@ -544,6 +544,7 @@ struct function_instance
 struct function_definition
 {
 	bool valid = true;
+	std::string library_name;
 
 	std::vector<std::string> arguments;
 	variables_collection variables;
@@ -775,6 +776,8 @@ struct material_parsing_state;
 
 std::unordered_map<std::string, translator*> translators;
 
+struct used_function_instance_info;
+
 struct translator
 {
 	using expressions_translator = std::string(*)(
@@ -791,9 +794,8 @@ struct translator
 	const variables_declarations_translator _variable_declaration_translator;
 
 	using functions_translator = std::string(*)(
-		const string_ref& name,
-		const function_definition* const& func,
-		const function_instance* const& instance,
+		const function_instance* instance,
+		const used_function_instance_info* info,
 		const material_parsing_state& state
 	);
 	const functions_translator _functions_translator;
@@ -980,6 +982,8 @@ struct library_parsing_state
 
 	function_collection functions;
 	libraries_collection libraries;
+
+	string_ref library_name{ "" };
 };
 
 using library_keyword_handle = void(*)(
@@ -1021,6 +1025,8 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 
 	parsed_library* parsed = new parsed_library;
 	library_parsing_state state;
+
+	state.library_name = library_name;
 
 	auto& context_impl = context->impl->impl;
 
@@ -1123,12 +1129,11 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 
 struct used_function_instance_info
 {
-	string_ref library_name;
 	string_ref function_name;
 	function_definition* func_def;
 
-	used_function_instance_info(string_ref _library_name, string_ref _function_name, function_definition* _func_def) :
-		library_name(_library_name), function_name(_function_name), func_def(_func_def) {};
+	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
+		function_name(_function_name), func_def(_func_def) {};
 };
 using used_functions_instances = std::unordered_map<function_instance*, used_function_instance_info>;
 
@@ -1325,9 +1330,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		case directive_type::dump_functions:
 			for (auto& func : state.ever_used_functions)
 				result.sources.back() += translator->_functions_translator(
-					func.second.function_name,
-					func.second.func_def,
 					func.first,
+					&func.second,
 					state
 				);
 			break;
@@ -2088,13 +2092,13 @@ inline void expressions_parsing_utilities::validate_node(
 
 		std::vector<const data_type*> arguments_types;
 
-		for (size_t i = 0; i < func_def.arguments.size(); i++)
+		for (size_t i = func_def.arguments.size() - 1; i != -1; i--)
 			arguments_types.push_back(get_type(i));
 
 		auto invalid_arguments_error = [&]()
 		{
 			auto the_error = "Function " + func_name + " is invalid for arguments: ";
-			for (size_t i = arguments_types.size() - 1; i != -1; i--)
+			for (size_t i = 0; i < arguments_types.size(); i++)
 			{
 				the_error += arguments_types.at(i)->name;
 				if (i != 0) the_error += ", ";
@@ -2111,8 +2115,7 @@ inline void expressions_parsing_utilities::validate_node(
 					pop_types(func_def.arguments.size());
 					types.push_back(func_instance.returned_type);
 
-					used_func_instances->insert({ &func_instance, { func_name, func_name, &func_def } });
-
+					used_func_instances->insert({ &func_instance, { func_name, &func_def } });
 					return;
 				}
 
@@ -2128,7 +2131,7 @@ inline void expressions_parsing_utilities::validate_node(
 			error
 		);
 
-		used_func_instances->insert({ &func_def.instances.back(), { func_name, func_name, &func_def } });
+		used_func_instances->insert({ &func_def.instances.back(), { func_name, &func_def } });
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
@@ -2728,6 +2731,7 @@ void library_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, library_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+	state.functions.recent().second.library_name = state.library_name;
 }
 
 void library_keywords_handles::_return
