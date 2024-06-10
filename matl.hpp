@@ -2109,6 +2109,8 @@ inline void expressions_parsing_utilities::validate_node(
 				types.push_back(func_instance.returned_type);
 
 				used_func_instances->insert({ &func_instance, { func_name, &func_def } });
+
+				return;
 			}
 		}
 
@@ -2701,7 +2703,19 @@ void library_keywords_handles::_using
 	}
 	else if (target == "library")
 	{
-		throw_error(true, "Cannot use other library inside library yet");
+		get_spaces(source, iterator);
+		auto library_name = get_rest_of_line(source, iterator);
+
+		auto itr = context.libraries.find(library_name);
+		if (itr == context.libraries.end())
+			error = "No such library: " + std::string(library_name);
+
+		rethrow_error();
+
+		state.libraries.insert({ library_name, itr->second });
+
+
+		//throw_error(true, "Cannot use other library inside library yet");
 		//Avoid self include and circular include
 	}
 	else //Call custom case
