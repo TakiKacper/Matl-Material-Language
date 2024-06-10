@@ -251,7 +251,7 @@ public:
 	}
 };
 
-struct hgm_solver
+struct hgm_string_solver
 {
 	static inline bool equal(const std::string& a, const std::string& b)
 	{
@@ -261,6 +261,14 @@ struct hgm_solver
 	static inline bool equal(const std::string& a, const string_ref& b)
 	{
 		return b == a;
+	}
+};
+
+struct hgm_pointer_solver
+{
+	static inline bool equal(void* a, void* b)
+	{
+		return a == b;
 	}
 };
 
@@ -521,7 +529,7 @@ struct variable_definition
 	expression* definition;
 	~variable_definition() { delete definition; }
 };
-using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_solver>;
+using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_string_solver>;
 
 struct function_instance
 {
@@ -554,7 +562,7 @@ struct function_definition
 
 	~function_definition() { delete result; };
 };
-using function_collection = heterogeneous_map<std::string, function_definition, hgm_solver>;
+using function_collection = heterogeneous_map<std::string, function_definition, hgm_string_solver>;
 
 struct property_definition
 {
@@ -757,15 +765,15 @@ struct parsed_domain
 {
 	std::vector<directive> directives;
 
-	heterogeneous_map<std::string, const data_type*, hgm_solver>  properties;
-	heterogeneous_map<std::string, symbol_definition, hgm_solver> symbols;
+	heterogeneous_map<std::string, const data_type*, hgm_string_solver>  properties;
+	heterogeneous_map<std::string, symbol_definition, hgm_string_solver> symbols;
 };
 
 struct parsed_library
 {
-	heterogeneous_map<std::string, function_definition, hgm_solver> functions;
+	heterogeneous_map<std::string, function_definition, hgm_string_solver> functions;
 };
-using libraries_collection = heterogeneous_map<std::string, parsed_library*, hgm_solver>;
+using libraries_collection = heterogeneous_map<std::string, parsed_library*, hgm_string_solver>;
 
 #pragma endregion
 
@@ -819,9 +827,9 @@ struct translator
 
 struct context_public_implementation
 {
-	heterogeneous_map<std::string, parsed_domain*, hgm_solver> domains;
-	heterogeneous_map<std::string, parsed_library*, hgm_solver> libraries;
-	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_solver> custom_using_cases;
+	heterogeneous_map<std::string, parsed_domain*, hgm_string_solver> domains;
+	heterogeneous_map<std::string, parsed_library*, hgm_string_solver> libraries;
+	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_cases;
 
 	translator* translator;
 
@@ -869,7 +877,7 @@ namespace domain_directives_handles
 	void split(const std::string&, matl::context*, domain_parsing_state&, std::string&);
 }
 
-heterogeneous_map<std::string, directive_handle, hgm_solver> directives_handles_map =
+heterogeneous_map<std::string, directive_handle, hgm_string_solver> directives_handles_map =
 {
 	{
 		{"expose",	 domain_directives_handles::expose},
@@ -1002,7 +1010,7 @@ namespace library_keywords_handles
 	void _return(const std::string&, context_public_implementation&, library_parsing_state&, std::string&);
 }
 
-heterogeneous_map<std::string, library_keyword_handle, hgm_solver> library_keywords_handles_map =
+heterogeneous_map<std::string, library_keyword_handle, hgm_string_solver> library_keywords_handles_map =
 {
 	{
 		{"let",			library_keywords_handles::let},
@@ -1135,7 +1143,7 @@ struct used_function_instance_info
 	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
 		function_name(_function_name), func_def(_func_def) {};
 };
-using used_functions_instances = std::unordered_map<function_instance*, used_function_instance_info>;
+using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
 
 struct material_parsing_state
 {
@@ -1150,7 +1158,7 @@ struct material_parsing_state
 	variables_collection variables;
 	function_collection functions;
 	libraries_collection libraries;
-	heterogeneous_map<std::string, property_definition, hgm_solver> properties;
+	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
 
 	used_functions_instances ever_used_functions;
 
@@ -1173,7 +1181,7 @@ namespace material_keywords_handles
 	void _return(const std::string&, context_public_implementation&, material_parsing_state&, std::string&);
 }
 
-heterogeneous_map<std::string, keyword_handle, hgm_solver> keywords_handles_map =
+heterogeneous_map<std::string, keyword_handle, hgm_string_solver> keywords_handles_map =
 {
 	{
 		{"let",			material_keywords_handles::let},
@@ -1328,10 +1336,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				);
 			break;
 		case directive_type::dump_functions:
-			for (auto& func : state.ever_used_functions)
+			for (auto itr = state.ever_used_functions.begin(); itr != state.ever_used_functions.end(); itr++)
 				result.sources.back() += translator->_functions_translator(
-					func.first,
-					&func.second,
+					itr->first,
+					&itr->second,
 					state
 				);
 			break;
@@ -2024,12 +2032,7 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::symbol:
 	{
-		if (domain == nullptr)
-		{
-			error = "Cannot use symbols since the domain is not loaded yet";
-			return;
-		}
-
+		throw_error(domain == nullptr, "Cannot use symbols since the domain is not loaded yet");
 		types.push_back(n->value.symbol->type);
 		break;
 	}
@@ -2045,27 +2048,21 @@ inline void expressions_parsing_utilities::validate_node(
 	{
 		auto& type = get_type(0);
 
-		if (!is_vector(type))
-		{
-			error = "Cannot swizzle not-vector type";
-			return;
-		}
-		else
-		{
-			size_t vec_size = get_vector_size(type);
+		throw_error(!is_vector(type), "Cannot swizzle not-vector type");
 
-			for (auto& comp : n->value.included_vector_components)
-				if (comp > vec_size)
-				{
-					error = type->name + " does not have " + std::to_string(comp) + " dimensions";
-					return;
-				}
+		size_t vec_size = get_vector_size(type);
 
-			size_t new_vec_size = n->value.included_vector_components.size();
+		for (auto& comp : n->value.included_vector_components)
+			if (comp > vec_size)
+			{
+				error = type->name + " does not have " + std::to_string(comp) + " dimensions";
+				return;
+			}
 
-			pop_types(1);
-			types.push_back(get_vector_type_of_size(static_cast<uint8_t>(new_vec_size)));
-		}
+		size_t new_vec_size = n->value.included_vector_components.size();
+
+		pop_types(1);
+		types.push_back(get_vector_type_of_size(static_cast<uint8_t>(new_vec_size)));
 
 		break;
 	}
@@ -2074,11 +2071,7 @@ inline void expressions_parsing_utilities::validate_node(
 		for (int i = 0; i < n->value.vector_size; i++)
 		{
 			auto& type = get_type(i);
-			if (type != scalar_data_type)
-			{
-				error = "Created vector must consist of scalars only";
-				return;
-			}
+			throw_error(type != scalar_data_type, "Created vector must consist of scalars only");
 		}
 
 		pop_types(n->value.vector_size);
@@ -2101,7 +2094,7 @@ inline void expressions_parsing_utilities::validate_node(
 			for (size_t i = 0; i < arguments_types.size(); i++)
 			{
 				the_error += arguments_types.at(i)->name;
-				if (i != 0) the_error += ", ";
+				if (i != arguments_types.size() - 1) the_error += ", ";
 			}
 			return the_error;
 		};
@@ -2529,6 +2522,9 @@ void material_keywords_handles::property
 		error = "No such property: " + std::string(property_name);
 		return;
 	}
+
+	throw_error(state.properties.find(property_name) != state.properties.end(), 
+		"Equation for property " + std::string(property_name) + " is already specified");
 
 	auto& prop = state.properties.insert({ property_name, {} })->second;
 	prop.definition = get_expression(
