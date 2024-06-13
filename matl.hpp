@@ -978,6 +978,45 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 
 #pragma region Libraries Parsing
 
+struct parsed_libraries_stack
+{
+private:
+	std::vector<string_ref> libraries_stack;
+public:
+	void push_parsed_lib(const std::string& lib_name, std::string& error);
+	void pop();
+	inline bool is_empty() { return libraries_stack.size() == 0; };
+};
+
+void parsed_libraries_stack::push_parsed_lib(const std::string& lib_name, std::string& error)
+{
+	auto gen_error = [&]()
+	{
+		error = "Circular libraries inclusion: \n";
+		for (auto itr = libraries_stack.begin(); itr != libraries_stack.end(); itr++)
+		{
+			error += '\t' + std::string(*itr);
+			if (itr != libraries_stack.end() - 1) error += '\n';
+		}
+
+		return error;
+	};
+
+	for (auto& lib : libraries_stack)
+	{
+		if (lib == lib_name)
+			gen_error();
+		rethrow_error();
+	}
+
+	libraries_stack.push_back({ lib_name });
+}
+
+void parsed_libraries_stack::pop()
+{
+	libraries_stack.pop_back();
+}
+
 struct library_parsing_state
 {
 	size_t iterator = 0;
@@ -986,12 +1025,14 @@ struct library_parsing_state
 	bool function_body = false;
 
 	std::vector<std::string> errors;
+	parsed_libraries_stack* parsed_libs_stack;
 
 	function_collection functions;
 	libraries_collection libraries;
 
 	string_ref library_name{ "" };
 };
+
 
 using library_keyword_handle = void(*)(
 	const std::string& material_source,
@@ -1020,22 +1061,39 @@ heterogeneous_map<std::string, library_keyword_handle, hgm_string_solver> librar
 	}
 };
 
-matl::library_parsing_raport matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context)
+matl::library_parsing_raport parse_library_implementation(
+	const std::string library_name, 
+	const std::string& library_source, 
+	context_public_implementation* context, 
+	parsed_libraries_stack* stack
+)
 {
-	if (context == nullptr)
+	bool owns_stack = true;
+
+	if (stack == nullptr)
+		stack = new parsed_libraries_stack;
+	else
+		owns_stack = false;
+
 	{
-		library_parsing_raport result;
-		result.success = false;
-		result.errors = { "[0] Cannot parse library without context" };
-		return result;
+		std::string error;
+		stack->push_parsed_lib(library_name, error);
+		if (error != "")
+		{
+			matl::library_parsing_raport result;
+			result.success = false;
+			result.errors = { error };
+			return result;
+		}
 	}
+
+#define return if (owns_stack) delete stack; else stack->pop(); return
 
 	parsed_library* parsed = new parsed_library;
 	library_parsing_state state;
 
+	state.parsed_libs_stack = stack;
 	state.library_name = library_name;
-
-	auto& context_impl = context->impl->impl;
 
 	while (!is_at_source_end(library_source, state.iterator))
 	{
@@ -1095,7 +1153,7 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 				goto _parse_library_handle_error;
 			}
 
-			kh_itr->second(library_source, context_impl, state, error);
+			kh_itr->second(library_source, *context, state, error);
 			if (error != "") goto _parse_library_handle_error;
 		}
 
@@ -1114,12 +1172,12 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 
 	parsed->functions = std::move(state.functions);
 
-	library_parsing_raport raport;
+	matl::library_parsing_raport raport;
 
 	if (state.errors.size() == 0)
 	{
 		raport.success = true;
-		context->impl->impl.libraries.insert({ library_name, parsed });
+		context->libraries.insert({ library_name, parsed });
 	}
 	else
 	{
@@ -1128,6 +1186,21 @@ matl::library_parsing_raport matl::parse_library(const std::string library_name,
 	}
 
 	return raport;
+
+#undef return
+}
+
+matl::library_parsing_raport matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context)
+{
+	if (context == nullptr)
+	{
+		matl::library_parsing_raport result;
+		result.success = false;
+		result.errors = { "[0] Cannot parse library without context" };
+		return result;
+	}
+
+	return parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr);
 }
 
 #pragma endregion
@@ -2708,6 +2781,10 @@ void library_keywords_handles::_using
 		auto itr = context.libraries.find(library_name);
 		if (itr == context.libraries.end())
 			error = "No such library: " + std::string(library_name);
+		else
+		{
+			//Try to perform nested - parse
+		}
 
 		rethrow_error();
 
