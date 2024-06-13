@@ -5,7 +5,7 @@
 
 #include <string>
 #include <vector>
-
+#include <list>
 
 #pragma region API declaration
 
@@ -28,11 +28,13 @@ namespace matl
 
 	struct library_parsing_raport
 	{
+		std::string library_name;
 		bool success = false;
 		std::vector<std::string> errors;
 	};
 
-	using custom_using_case_callback = void(std::string args, std::string& error);
+	using custom_using_case_handle = void(std::string args, std::string& error);
+	using dynamic_library_parse_request_handle = const std::string*(const std::string& lib_name, std::string& error);
 
 	class context;
 
@@ -40,7 +42,7 @@ namespace matl
 	void destroy_context(context*&);
 
 	parsed_material parse_material(const std::string& material_source, matl::context* context);
-	library_parsing_raport parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
+	std::list<matl::library_parsing_raport> parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
 	domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 }
 
@@ -50,11 +52,12 @@ private:
 	struct implementation;
 	implementation* impl;
 	friend parsed_material parse_material(const std::string& material_source, matl::context* context);
-	friend library_parsing_raport parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
+	friend std::list<matl::library_parsing_raport> parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
 	friend domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 public:
-	void add_custom_using_case_callback(std::string _case, custom_using_case_callback callback);
+	void add_custom_using_case_handle(std::string _case, custom_using_case_handle callback);
+	void set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle);
 
 private:
 	context();
@@ -76,7 +79,7 @@ const std::string language_version = "0.1";
 
 #include <list>
 #include <unordered_map>
-#include <stdexcept>
+#include <memory>
 
 #pragma region String Ref
 
@@ -203,7 +206,7 @@ public:
 		for (iterator itr = begin(); itr != end(); itr++)
 			if (_equality_solver::equal(itr->first, key))
 				return itr->second;
-		throw std::runtime_error{"Invalid record"};
+		throw std::exception{"Invalid record"};
 	}
 
 	template<class _key2>
@@ -212,7 +215,7 @@ public:
 		for (const_iterator itr = begin(); itr != end(); itr++)
 			if (_equality_solver::equal(itr->first, key))
 				return itr->second;
-		throw std::runtime_error{"Invalid record"};
+		throw std::exception{"Invalid record"};
 	}
 
 	template<class _key2>
@@ -828,9 +831,10 @@ struct context_public_implementation
 {
 	heterogeneous_map<std::string, parsed_domain*, hgm_string_solver> domains;
 	heterogeneous_map<std::string, parsed_library*, hgm_string_solver> libraries;
-	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_cases;
+	heterogeneous_map<std::string, matl::custom_using_case_handle*, hgm_string_solver> custom_using_handles;
 
-	translator* translator;
+	matl::dynamic_library_parse_request_handle* dlprh = nullptr;
+	translator* translator = nullptr;
 
 	~context_public_implementation();
 };
@@ -1025,7 +1029,8 @@ struct library_parsing_state
 	bool function_body = false;
 
 	std::vector<std::string> errors;
-	parsed_libraries_stack* parsed_libs_stack;
+	parsed_libraries_stack* parsed_libs_stack = nullptr;
+	std::list<matl::library_parsing_raport>* parsing_raports;
 
 	function_collection functions;
 	libraries_collection libraries;
@@ -1061,11 +1066,12 @@ heterogeneous_map<std::string, library_keyword_handle, hgm_string_solver> librar
 	}
 };
 
-matl::library_parsing_raport parse_library_implementation(
+void parse_library_implementation(
 	const std::string library_name, 
 	const std::string& library_source, 
 	context_public_implementation* context, 
-	parsed_libraries_stack* stack
+	parsed_libraries_stack* stack,
+	std::list<matl::library_parsing_raport>* parsing_raports
 )
 {
 	bool owns_stack = true;
@@ -1080,20 +1086,21 @@ matl::library_parsing_raport parse_library_implementation(
 		stack->push_parsed_lib(library_name, error);
 		if (error != "")
 		{
-			matl::library_parsing_raport result;
-			result.success = false;
-			result.errors = { error };
-			return result;
+			matl::library_parsing_raport raport;
+			raport.library_name = library_name;
+			raport.success = false;
+			raport.errors = { "[0] " + error};
+			parsing_raports->push_back(raport);
+			return;
 		}
 	}
-
-#define return if (owns_stack) delete stack; else stack->pop(); return
 
 	parsed_library* parsed = new parsed_library;
 	library_parsing_state state;
 
 	state.parsed_libs_stack = stack;
 	state.library_name = library_name;
+	state.parsing_raports = parsing_raports;
 
 	while (!is_at_source_end(library_source, state.iterator))
 	{
@@ -1173,6 +1180,7 @@ matl::library_parsing_raport parse_library_implementation(
 	parsed->functions = std::move(state.functions);
 
 	matl::library_parsing_raport raport;
+	raport.library_name = library_name;
 
 	if (state.errors.size() == 0)
 	{
@@ -1185,22 +1193,28 @@ matl::library_parsing_raport parse_library_implementation(
 		raport.errors = std::move(state.errors);
 	}
 
-	return raport;
-
-#undef return
+	if (owns_stack) delete stack; 
+	else stack->pop(); 
+	
+	parsing_raports->push_back(raport); 
+	return;
 }
 
-matl::library_parsing_raport matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context)
+std::list<matl::library_parsing_raport> matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context)
 {
 	if (context == nullptr)
 	{
-		matl::library_parsing_raport result;
-		result.success = false;
-		result.errors = { "[0] Cannot parse library without context" };
-		return result;
+		matl::library_parsing_raport raport;
+		raport.success = false;
+		raport.errors = { "[0] Cannot parse library without context" };
+		raport.library_name = library_name;
+		return { raport };
 	}
 
-	return parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr);
+	auto raports = std::make_unique<std::list<matl::library_parsing_raport>>();
+	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, raports.get());
+
+	return std::move(*raports.get());
 }
 
 #pragma endregion
@@ -1457,9 +1471,14 @@ void matl::destroy_context(context*& context)
 	context = nullptr;
 }
 
-void matl::context::add_custom_using_case_callback(std::string _case, matl::custom_using_case_callback callback)
+void matl::context::add_custom_using_case_handle(std::string _case, matl::custom_using_case_handle callback)
 {
-	impl->impl.custom_using_cases.insert({ _case, callback });
+	impl->impl.custom_using_handles.insert({ _case, callback });
+}
+
+void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle)
+{
+	impl->impl.dlprh = handle;
 }
 
 #pragma endregion
@@ -2666,8 +2685,8 @@ void material_keywords_handles::_using
 	}
 	else //Call custom case
 	{
-		auto itr = context.custom_using_cases.find(target);
-		if (itr == context.custom_using_cases.end())
+		auto itr = context.custom_using_handles.find(target);
+		if (itr == context.custom_using_handles.end())
 		{
 			error = "No such using case: " + std::string(target);
 			return;
@@ -2781,23 +2800,30 @@ void library_keywords_handles::_using
 		auto itr = context.libraries.find(library_name);
 		if (itr == context.libraries.end())
 			error = "No such library: " + std::string(library_name);
-		else
+
+		if (itr == context.libraries.end() && context.dlprh != nullptr)
 		{
-			//Try to perform nested - parse
+			error = "";
+
+			const std::string* nested_lib_source = context.dlprh(library_name, error);
+			rethrow_error();
+			throw_error(nested_lib_source == nullptr, "No such library: " + std::string(library_name));
+
+			parse_library_implementation(library_name, *nested_lib_source, &context, state.parsed_libs_stack, state.parsing_raports);
+
+			throw_error(!state.parsing_raports->back().success, error);
+
+			itr = context.libraries.find(library_name);
 		}
 
 		rethrow_error();
 
 		state.libraries.insert({ library_name, itr->second });
-
-
-		//throw_error(true, "Cannot use other library inside library yet");
-		//Avoid self include and circular include
 	}
 	else //Call custom case
 	{
-		auto itr = context.custom_using_cases.find(target);
-		if (itr == context.custom_using_cases.end())
+		auto itr = context.custom_using_handles.find(target);
+		if (itr == context.custom_using_handles.end())
 		{
 			error = "No such using case: " + std::string(target);
 			return;
