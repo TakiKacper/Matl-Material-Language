@@ -71,7 +71,6 @@ private:
 
 const std::string language_version = "0.1";
 
-
 #define rethrow_error() if (error != "") return
 #define throw_error(condition, _error) if (condition) { error = _error; return; } 1
 
@@ -677,7 +676,7 @@ const char symbols_prefix = '$';
 
 const uint8_t functions_precedence = 3;
 
-bool is_vector(const data_type* type)
+inline bool is_vector(const data_type* type)
 {
 	if (type == get_data_type({ "vector2" })) return true;
 	if (type == get_data_type({ "vector3" })) return true;
@@ -686,7 +685,7 @@ bool is_vector(const data_type* type)
 	return false;
 }
 
-uint8_t get_vector_size(const data_type* type)
+inline uint8_t get_vector_size(const data_type* type)
 {
 	if (type == get_data_type({ "vector2" })) return 2;
 	if (type == get_data_type({ "vector3" })) return 3;
@@ -695,7 +694,7 @@ uint8_t get_vector_size(const data_type* type)
 	return 0;
 }
 
-const data_type* get_vector_type_of_size(uint8_t type)
+inline const data_type* get_vector_type_of_size(uint8_t type)
 {
 	switch (type)
 	{
@@ -2544,7 +2543,7 @@ void material_keywords_handles::property
 	rethrow_error();
 
 	if (itr->second != type)
-		error = "Invalid property type; expected: " + itr->second->name + " recived: " + type->name;
+		error = "Invalid property type; expected: " + itr->second->name + " got: " + type->name;
 }
 
 void material_keywords_handles::_using
