@@ -51,9 +51,9 @@ class matl::context
 private:
 	struct implementation;
 	implementation* impl;
-	friend parsed_material parse_material(const std::string& material_source, matl::context* context);
-	friend std::list<matl::library_parsing_raport> parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
-	friend domain_parsing_raport parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
+	friend parsed_material matl::parse_material(const std::string& material_source, matl::context* context);
+	friend std::list<matl::library_parsing_raport> matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
+	friend domain_parsing_raport matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 public:
 	void add_custom_using_case_handle(std::string _case, custom_using_case_handle callback);
