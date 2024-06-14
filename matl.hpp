@@ -72,6 +72,8 @@ private:
 
 #ifdef MATL_IMPLEMENTATION
 
+#define MATL_IMPLEMENTATION_INCLUDED
+
 const std::string language_version = "0.1";
 
 #define rethrow_error() if (error != "") return
