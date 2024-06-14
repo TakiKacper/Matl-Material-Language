@@ -81,7 +81,6 @@ const std::string language_version = "0.1";
 
 #include <list>
 #include <unordered_map>
-#include <memory>
 
 #pragma region String Ref
 
@@ -406,9 +405,9 @@ struct variable_definition;
 struct function_definition;
 struct symbol_definition;
 
-const data_type*	   const get_data_type			(string_ref name);
-const unary_operator*  const get_unary_operator		(const char& symbol);
-const binary_operator* const get_binary_operator	(const char& symbol);
+const data_type*	   const get_data_type			(const string_ref& name);
+const unary_operator*  const get_unary_operator		(const string_ref& symbol);
+const binary_operator* const get_binary_operator	(const string_ref& symbol);
 
 struct data_type
 {
@@ -419,7 +418,7 @@ struct data_type
 
 struct unary_operator
 {
-	char symbol;
+	std::string symbol;
 	uint8_t precedence;
 	std::string operation_display_name;
 
@@ -427,7 +426,7 @@ struct unary_operator
 	std::vector<valid_types_set> allowed_types;
 
 	unary_operator(
-		char _symbol,
+		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
 		std::vector<valid_types_set> _allowed_types)
@@ -439,6 +438,7 @@ struct unary_operator::valid_types_set
 {
 	const data_type* operand_type;
 	const data_type* returned_type;
+
 	valid_types_set(
 		std::string _operand_type,
 		std::string _returned_type) :
@@ -448,7 +448,7 @@ struct unary_operator::valid_types_set
 
 struct binary_operator
 {
-	char symbol;
+	std::string symbol;
 	uint8_t precedence;
 	std::string operation_display_name;
 
@@ -456,7 +456,7 @@ struct binary_operator
 	std::vector<valid_types_set> allowed_types;
 
 	binary_operator(
-		char _symbol,
+		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
 		std::vector<valid_types_set> _allowed_types)
@@ -481,9 +481,29 @@ struct binary_operator::valid_types_set
 
 struct expression
 {
+	
 	struct node;
+	bool conditional;
 
-	std::list<node*> nodes;
+	struct _data
+	{
+		std::list<node*> nodes;															//valid if not conditional
+		std::list<std::pair<expression*, expression*>> expressions_and_conditions;		//valid if conditional
+	};
+
+	_data data;
+
+	expression(std::list<node*>& exp)
+	{
+		data.nodes = std::move(exp);
+		conditional = false;
+	}
+
+	expression(std::list<std::pair<expression*, expression*>>& exp)
+	{
+		data.expressions_and_conditions = std::move(exp);
+		conditional = true;
+	}
 
 	~expression();
 };
@@ -523,8 +543,15 @@ struct expression::node
 
 expression::~expression()
 {
-	for (auto& n : nodes)
-		delete n;
+	if (conditional)
+		for (auto& n : data.nodes)
+			delete n;
+	else
+		for (auto& exp : data.expressions_and_conditions)
+		{
+			delete exp.first;
+			delete exp.second;
+		}
 }
 
 struct variable_definition
@@ -578,8 +605,12 @@ struct property_definition
 
 #pragma region Builtins
 
+const uint8_t logical_operators_precedence_begin = 1;
+const uint8_t numeric_operators_precedence_begin = 4;
+
 const std::vector<data_type> data_types
 {
+	{ "bool", },
 	{ "scalar", },
 	{ "vector2", },
 	{ "vector3", },
@@ -590,18 +621,42 @@ const std::vector<data_type> data_types
 //unary operators; symbol, display name, precedence, {input type, output type}
 const std::vector<unary_operator> unary_operators
 {
-	{ '-', "negate", 4, {
+	{ "-", "negate", numeric_operators_precedence_begin + 3, {
 		{"scalar", "scalar"},
 		{"vector2", "vector2"},
 		{"vector3", "vector3"},
 		{"vector4", "vector4"}
+	}},
+
+	{ "not", "negate", logical_operators_precedence_begin + 1, {
+		{"bool", "bool"},
 	}},
 };
 
 //binary operators; symbol, display name, precedence, {input type left, input type right, output type}
 const std::vector<binary_operator> binary_operators
 {
-	{ '+', "add", 1, {
+	{ "and ", "compare with >", logical_operators_precedence_begin, {
+		{"scalar", "scalar", "bool"}
+	} },
+
+	{ "or ", "compare with >", logical_operators_precedence_begin, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "xor ", "compare with >", logical_operators_precedence_begin, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "<", "compare with <", logical_operators_precedence_begin + 1, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ ">", "compare with >", logical_operators_precedence_begin + 1, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "+", "add", numeric_operators_precedence_begin, {
 		{"scalar", "scalar", "scalar"},
 
 		{"scalar", "vector2", "vector2"},
@@ -617,7 +672,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	}},
 
-	{ '-', "substract", 1, {
+	{ "-", "substract", numeric_operators_precedence_begin, {
 		{"scalar", "scalar", "scalar"},
 
 		{"vector2", "scalar", "vector2"},
@@ -630,7 +685,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	} },
 
-	{ '*', "multiply", 2, {
+	{ "*", "multiply", numeric_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "scalar"},
 
 		{"scalar", "vector2", "vector2"},
@@ -646,7 +701,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	} },
 
-	{ '/', "divide", 2, {
+	{ "/", "divide", numeric_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "scalar"},
 
 		{"vector2", "scalar", "vector2"},
@@ -679,7 +734,7 @@ const data_type* scalar_data_type = get_data_type({ "scalar" });
 const char comment_char = '#';
 const char symbols_prefix = '$';
 
-const uint8_t functions_precedence = 3;
+const uint8_t functions_precedence = numeric_operators_precedence_begin + 2;
 
 inline bool is_vector(const data_type* type)
 {
@@ -712,7 +767,7 @@ inline const data_type* get_vector_type_of_size(uint8_t type)
 	return nullptr;
 }
 
-inline const data_type* const get_data_type(string_ref name)
+inline const data_type* const get_data_type(const string_ref& name)
 {
 	for (auto& type : data_types)
 		if (type.name == name)
@@ -720,7 +775,7 @@ inline const data_type* const get_data_type(string_ref name)
 	return nullptr;
 }
 
-inline const unary_operator* const get_unary_operator(const char& symbol)
+inline const unary_operator* const get_unary_operator(const string_ref& symbol)
 {
 	for (auto& op : unary_operators)
 		if (op.symbol == symbol)
@@ -728,7 +783,7 @@ inline const unary_operator* const get_unary_operator(const char& symbol)
 	return nullptr;
 }
 
-inline const binary_operator* const get_binary_operator(const char& symbol)
+inline const binary_operator* const get_binary_operator(const string_ref& symbol)
 {
 	for (auto& op : binary_operators)
 		if (op.symbol == symbol)
@@ -1213,10 +1268,10 @@ std::list<matl::library_parsing_raport> matl::parse_library(const std::string li
 		return { raport };
 	}
 
-	auto raports = std::make_unique<std::list<matl::library_parsing_raport>>();
-	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, raports.get());
+	std::list<matl::library_parsing_raport> raports;
+	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, &raports);
 
-	return std::move(*raports.get());
+	return raports;
 }
 
 #pragma endregion
@@ -1614,14 +1669,12 @@ bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str
 
 bool expressions_parsing_utilities::is_unary_operator(const std::string& node_str)
 {
-	if (node_str.size() != 1) return false;
-	return get_unary_operator(node_str.at(0)) != nullptr;
+	return get_unary_operator(node_str) != nullptr;
 }
 
 bool expressions_parsing_utilities::is_binary_operator(const std::string& node_str)
 {
-	if (node_str.size() != 1) return false;
-	return get_binary_operator(node_str.at(0)) != nullptr;
+	return get_binary_operator(node_str) != nullptr;
 }
 
 int expressions_parsing_utilities::get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error)
@@ -1803,10 +1856,18 @@ _shunting_yard_loop:
 		size_t iterator2 = iterator;
 		throw_error(expecting_library_function && !is_function_call(source, iterator2), "Expected function call");
 
-		if (is_unary_operator(node_str) && accepts_right_unary_operator)
+		if (node_str == "if")
+		{
+
+		}
+		else if (node_str == "else")
+		{
+
+		}
+		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
 			new_node->type = node_type::unary_operator;
-			new_node->value.unary_operator = get_unary_operator(node_str.at(0));
+			new_node->value.unary_operator = get_unary_operator(node_str);
 
 			insert_operator(operators, output, new_node);
 
@@ -1815,7 +1876,7 @@ _shunting_yard_loop:
 		else if (is_binary_operator(node_str))
 		{
 			new_node->type = node_type::binary_operator;
-			new_node->value.binary_operator = get_binary_operator(node_str.at(0));
+			new_node->value.binary_operator = get_binary_operator(node_str);
 
 			insert_operator(operators, output, new_node);
 
@@ -1844,21 +1905,12 @@ _shunting_yard_loop:
 			auto components = get_string_ref(source, iterator, error);
 
 			rethrow_error();
-
-			if (components.size() > 4)
-			{
-				error = "Constructed vector is too long: " + std::string(node_str);
-				return;
-			}			
+			throw_error(components.size() > 4, "Constructed vector is too long: " + std::string(node_str));
 
 			for (size_t i = 0; i < components.size(); i++)
 			{
 				auto itr = vector_components_names.find(components.at(i));
-				if (itr == vector_components_names.end())
-				{
-					error = "No such vector component: " + components.at(i);
-					return;
-				}
+				throw_error(itr == vector_components_names.end(), error = "No such vector component: " + components.at(i));
 				new_node->value.included_vector_components.push_back(itr->second);
 			}
 
@@ -2279,8 +2331,7 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	auto* exp = new expression;
-	exp->nodes = std::move(output);
+	auto* exp = new expression(output);
 	return exp;
 }
 
@@ -2299,7 +2350,7 @@ const data_type* validate_expression(
 
 	if (exp == nullptr) return nullptr;
 
-	for (auto& n : exp->nodes)
+	for (auto& n : exp->data.nodes)
 	{
 		expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
 		if (error != "") break;
