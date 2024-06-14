@@ -481,7 +481,6 @@ struct binary_operator::valid_types_set
 
 struct expression
 {
-	
 	struct node;
 	bool conditional;
 
@@ -636,23 +635,39 @@ const std::vector<unary_operator> unary_operators
 //binary operators; symbol, display name, precedence, {input type left, input type right, output type}
 const std::vector<binary_operator> binary_operators
 {
-	{ "and ", "compare with >", logical_operators_precedence_begin, {
-		{"scalar", "scalar", "bool"}
+	{ "and", "conjunct", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
 	} },
 
-	{ "or ", "compare with >", logical_operators_precedence_begin, {
+	{ "or ", "alternate", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "xor ", "exclusively alternate", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "==", "compare with ==", logical_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "bool"}
 	}},
 
-	{ "xor ", "compare with >", logical_operators_precedence_begin, {
+	{ "!=", "compare with !=", logical_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "bool"}
 	}},
 
-	{ "<", "compare with <", logical_operators_precedence_begin + 1, {
+	{ "<", "compare with <", logical_operators_precedence_begin + 2, {
 		{"scalar", "scalar", "bool"}
 	}},
 
-	{ ">", "compare with >", logical_operators_precedence_begin + 1, {
+	{ ">", "compare with >", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "<=", "compare with <=", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ ">=", "compare with >=", logical_operators_precedence_begin + 2, {
 		{"scalar", "scalar", "bool"}
 	}},
 
@@ -1555,8 +1570,8 @@ namespace expressions_parsing_utilities
 	string_ref get_node_str(const std::string& source, size_t& iterator, std::string& error);
 	bool is_function_call(const std::string& source, size_t& iterator);
 	bool is_scalar_literal(const string_ref& node_str, std::string& error);
-	bool is_unary_operator(const std::string& node_str);
-	bool is_binary_operator(const std::string& node_str);
+	bool is_unary_operator(const string_ref& node_str);
+	bool is_binary_operator(const string_ref& node_str);
 	int get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error);
 	int get_precedence(const expression::node* node);
 	bool is_any_of_left_parentheses(const expression::node* node);
@@ -1590,7 +1605,7 @@ namespace expressions_parsing_utilities
 	);
 }
 
-string_ref expressions_parsing_utilities::get_node_str(const std::string& source, size_t& iterator, std::string& error)
+inline string_ref expressions_parsing_utilities::get_node_str(const std::string& source, size_t& iterator, std::string& error)
 {
 	if (is_operator(source.at(iterator)))
 	{
@@ -1639,7 +1654,7 @@ string_ref expressions_parsing_utilities::get_node_str(const std::string& source
 	return string_ref{ source, begin, iterator };
 }
 
-bool expressions_parsing_utilities::is_function_call(const std::string& source, size_t& iterator)
+inline bool expressions_parsing_utilities::is_function_call(const std::string& source, size_t& iterator)
 {
 	get_spaces(source, iterator);
 
@@ -1649,7 +1664,7 @@ bool expressions_parsing_utilities::is_function_call(const std::string& source, 
 	return (source.at(iterator) == '(');
 }
 
-bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
+inline bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
 {
 	int dot_pos = -1;
 
@@ -1667,17 +1682,17 @@ bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str
 	return true;
 }
 
-bool expressions_parsing_utilities::is_unary_operator(const std::string& node_str)
+inline bool expressions_parsing_utilities::is_unary_operator(const string_ref& node_str)
 {
 	return get_unary_operator(node_str) != nullptr;
 }
 
-bool expressions_parsing_utilities::is_binary_operator(const std::string& node_str)
+inline bool expressions_parsing_utilities::is_binary_operator(const string_ref& node_str)
 {
 	return get_binary_operator(node_str) != nullptr;
 }
 
-int expressions_parsing_utilities::get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error)
+inline int expressions_parsing_utilities::get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error)
 {
 	int parenthesis_deepness = 0;
 	int comas = 0;
