@@ -284,7 +284,7 @@ inline bool is_operator(const char& c)
 	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
 		|| c == '>' || c == '<'
 		|| c == ')' || c == '(' || c == '.' || c == ',' 
-		|| c == '#');
+		|| c == '#' || c == ':');
 }
 
 inline bool is_whitespace(const char& c)
@@ -482,29 +482,29 @@ struct binary_operator::valid_types_set
 struct expression
 {
 	struct node;
-	bool conditional;
 
-	struct _data
+	struct literal_expression
 	{
-		std::list<node*> nodes;															//valid if not conditional
-		std::list<std::pair<expression*, expression*>> expressions_and_conditions;		//valid if conditional
+		std::list<node*> nodes;
+		literal_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
+		~literal_expression();
 	};
 
-	_data data;
-
-	expression(std::list<node*>& exp)
+	struct equation
 	{
-		data.nodes = std::move(exp);
-		conditional = false;
-	}
+		literal_expression* condition;
+		literal_expression* value;
+		equation(literal_expression* _condition, literal_expression* _value) :
+			condition(_condition), value(_value) {};
+		~equation() { delete condition; delete value; };
+	};
 
-	expression(std::list<std::pair<expression*, expression*>>& exp)
-	{
-		data.expressions_and_conditions = std::move(exp);
-		conditional = true;
-	}
+	std::list<equation*> equations;
 
-	~expression();
+	expression(std::list<equation*>& _equations)
+		: equations(std::move(_equations)) {};
+
+	~expression() { for (auto& eq : equations) delete eq; };
 };
 
 struct parsed_library;
@@ -540,18 +540,11 @@ struct expression::node
 	} value;
 };
 
-expression::~expression()
+expression::literal_expression::~literal_expression()
 {
-	if (conditional)
-		for (auto& n : data.nodes)
-			delete n;
-	else
-		for (auto& exp : data.expressions_and_conditions)
-		{
-			delete exp.first;
-			delete exp.second;
-		}
-}
+	for (auto& node : nodes) 
+		delete node;
+};
 
 struct variable_definition
 {
@@ -1592,7 +1585,7 @@ namespace expressions_parsing_utilities
 		bool can_use_symbols,
 		const parsed_domain* domain,
 		expression::node*& new_node,
-		std::list<std::pair<expression*, expression*>>& conditional_expression,
+		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::string& error
@@ -1783,7 +1776,7 @@ void expressions_parsing_utilities::shunting_yard(
 	bool can_use_symbols,
 	const parsed_domain* domain,
 	expression::node*& new_node,
-	std::list<std::pair<expression*, expression*>>& conditional_expression,
+	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
 	std::string& error
@@ -1932,48 +1925,50 @@ _shunting_yard_loop:
 		if (node_str == "if")
 		{
 			throw_error(else_used, "Cannot add if-s after an else statement");
+			throw_error(if_used && output.size() == 0, "Invalid Expression");
+			throw_error(!if_used && output.size() != 0, "Invalid Expression");
 
 			if (if_used)
 			{
 				finish_expression();
-				auto exp = new expression(output);
-				conditional_expression.back().first = exp;
+				equations.back()->value = new expression::literal_expression(output);
 			}
-			else if (output.size() != 0)
-				throw_error(true, "Invalid Expression");
-
-			output.clear();
 
 			if_used = true;
 			accepts_right_unary_operator = true;
 		}
 		else if (node_str == "else")
 		{
+			throw_error(!if_used, "else can be only used after if statement");
+			throw_error(output.size() == 0, "Invalid Expression");
 			throw_error(else_used, "Cannot specify two else cases");
 
 			else_used = true;
 
 			finish_expression();
-			auto exp = new expression(output);
-			conditional_expression.back().first = exp;
-
-			output.clear();
+			equations.back()->value = new expression::literal_expression(output);
 		}
 		else if (node_str == ":")
 		{
 			if (!else_used) finish_expression();
 
+			throw_error(!if_used, ": can be only used after if or else statements");
 			throw_error(output.size() == 0 && !else_used, "Missing condition");
 			throw_error(output.size() != 0 && else_used, "Invalid expression");
 
 			if (!else_used)
 			{
-				auto exp = new expression(output);
-				conditional_expression.push_back({ nullptr, exp });
+				equations.push_back(new expression::equation{
+					new expression::literal_expression(output),
+					nullptr
+				});
 			}
 			else
 			{
-				conditional_expression.push_back({ nullptr, nullptr });
+				equations.push_back(new expression::equation{
+					nullptr,
+					nullptr
+				});
 			}
 		}
 		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
@@ -2178,8 +2173,13 @@ _shunting_yard_end:
 
 	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
-	if (conditional_expression.size() != 0)
-		conditional_expression.back().first = new expression(output);
+	if (equations.size() != 0)
+		equations.back()->value = new expression::literal_expression(output);
+	else
+		equations.push_back(new expression::equation{
+			nullptr,
+			new expression::literal_expression(output)
+		});
 }
 
 inline void expressions_parsing_utilities::validate_node(
@@ -2372,7 +2372,7 @@ expression* get_expression(
 {
 	expression::node* new_node = nullptr;
 
-	std::list<std::pair<expression*, expression*>> conditional_expression;
+	std::list<expression::equation*> equations;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
@@ -2387,7 +2387,7 @@ expression* get_expression(
 		domain != nullptr,
 		domain,
 		new_node,
-		conditional_expression,
+		equations,
 		output,
 		operators,
 		error
@@ -2406,14 +2406,7 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	expression* exp;
-
-	if (conditional_expression.size() == 0)
-		exp = new expression(output);
-	else
-		exp = new expression(conditional_expression);
-
-	return exp;
+	return new expression(equations);
 }
 
 const data_type* validate_expression(
@@ -2429,9 +2422,9 @@ const data_type* validate_expression(
 
 	std::vector<const data_type*> types;
 
-	auto validate_unconditional = [&](const decltype(exp->data.nodes)& nodes) -> const data_type*
+	auto validate_literal_expression = [&](const expression::literal_expression* le) -> const data_type*
 	{
-		for (auto& n : nodes)
+		for (auto& n : le->nodes)
 		{
 			expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
 			if (error != "") break;
@@ -2447,15 +2440,12 @@ const data_type* validate_expression(
 
 	if (exp == nullptr) return nullptr;
 
-	if (!exp->conditional)
-		return validate_unconditional(exp->data.nodes);
-
 	const data_type* return_type = nullptr;
 
 	int counter = 1;
-	for (auto& pair : exp->data.expressions_and_conditions)
+	for (auto& equation : exp->equations)
 	{
-		const data_type* value_type = validate_unconditional(pair.first->data.nodes);
+		const data_type* value_type = validate_literal_expression(equation->value);
 		if (error != "") return nullptr;
 		if (return_type == nullptr) return_type = value_type;
 		else if (value_type != return_type)
@@ -2465,13 +2455,13 @@ const data_type* validate_expression(
 			return nullptr;
 		}
 
-		if (pair.second == nullptr)
+		if (equation->condition == nullptr)
 		{
 			counter++;
 			continue;
 		}
 
-		const data_type* condition_type = validate_unconditional(pair.second->data.nodes);
+		const data_type* condition_type = validate_literal_expression(equation->condition);
 		if (error != "") return nullptr;
 		if (condition_type != bool_data_type)
 		{
