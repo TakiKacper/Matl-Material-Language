@@ -77,7 +77,7 @@ private:
 const std::string language_version = "0.1";
 
 #define rethrow_error() if (error != "") return
-#define throw_error(condition, _error) if (condition) { error = _error; return; } 1
+#define throw_error(condition, _error) if (condition) { error = _error; return; }
 
 #include <list>
 #include <unordered_map>
@@ -745,6 +745,7 @@ const std::unordered_map<char, uint8_t> vector_components_names = {
 
 //data type applied to all integer and float literals eg. 1; 2; 3.14
 const data_type* scalar_data_type = get_data_type({ "scalar" });
+const data_type* bool_data_type = get_data_type({ "bool" });
 
 const char comment_char = '#';
 const char symbols_prefix = '$';
@@ -1059,8 +1060,8 @@ struct parsed_libraries_stack
 private:
 	std::vector<string_ref> libraries_stack;
 public:
-	void push_parsed_lib(const std::string& lib_name, std::string& error);
-	void pop();
+	inline void push_parsed_lib(const std::string& lib_name, std::string& error);
+	inline void pop();
 	inline bool is_empty() { return libraries_stack.size() == 0; };
 };
 
@@ -1591,6 +1592,7 @@ namespace expressions_parsing_utilities
 		bool can_use_symbols,
 		const parsed_domain* domain,
 		expression::node*& new_node,
+		std::list<std::pair<expression*, expression*>>& conditional_expression,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::string& error
@@ -1781,6 +1783,7 @@ void expressions_parsing_utilities::shunting_yard(
 	bool can_use_symbols,
 	const parsed_domain* domain,
 	expression::node*& new_node,
+	std::list<std::pair<expression*, expression*>>& conditional_expression,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
 	std::string& error
@@ -1789,10 +1792,6 @@ void expressions_parsing_utilities::shunting_yard(
 	using node = expression::node;
 	using node_type = node::node_type;
 
-	bool accepts_right_unary_operator = true;
-	bool expecting_library_function = false;
-	string_ref library_name = {nullptr};
-	
 	auto push_vector_or_parenthesis = [&]()
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
@@ -1856,7 +1855,66 @@ void expressions_parsing_utilities::shunting_yard(
 		}
 	};
 
+	auto finish_expression = [&]()
+	{
+		//Push all binary_operators left on the binary_operators stack to the output
+		auto itr = operators.rbegin();
+		while (itr != operators.rend())
+		{
+			output.push_back(*itr);
+			itr++;
+		}
+
+		operators.clear();
+		new_node = nullptr;
+
+		size_t operands_check_sum = 0;
+		for (auto& n : output)
+		{
+			switch (n->type)
+			{
+			case node_type::scalar_literal:
+			case node_type::symbol:
+			case node_type::variable:
+				operands_check_sum++;
+				break;
+			case node_type::function:
+				throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
+				operands_check_sum -= n->value.function->second.arguments.size();
+				operands_check_sum++;
+				break;
+			case node_type::vector_contructor_operator:
+				throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
+				operands_check_sum -= n->value.vector_size;
+				operands_check_sum++;
+				break;
+			case node_type::binary_operator:
+				throw_error(operands_check_sum < 2, "Invalid expression");
+				operands_check_sum -= 2;
+				operands_check_sum++;
+				break;
+			case node_type::single_arg_left_parenthesis:
+			case node_type::unary_operator:
+			case node_type::vector_component_access:
+				throw_error(operands_check_sum < 1, "Invalid expression");
+				break;
+			}
+		}
+
+		throw_error(operands_check_sum != 1, "Invalid expression");
+	};
+
 	get_spaces(source, iterator);
+
+	bool accepts_right_unary_operator = true;
+	bool expecting_library_function = false;
+
+	string_ref library_name = { nullptr };
+
+	bool if_used = false;
+	bool else_used = false;	
+
+	expression* condition_buffer = nullptr;
 
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
@@ -1866,18 +1924,57 @@ _shunting_yard_loop:
 		rethrow_error();
 
 		if (node_str.at(0) == comment_char)
-			goto _shunting_yard_end;
+			goto _shunting_yard_end;		//error for multline
 
 		size_t iterator2 = iterator;
 		throw_error(expecting_library_function && !is_function_call(source, iterator2), "Expected function call");
 
 		if (node_str == "if")
 		{
+			throw_error(else_used, "Cannot add if-s after an else statement");
 
+			if (if_used)
+			{
+				finish_expression();
+				auto exp = new expression(output);
+				conditional_expression.back().first = exp;
+			}
+			else if (output.size() != 0)
+				throw_error(true, "Invalid Expression");
+
+			output.clear();
+
+			if_used = true;
+			accepts_right_unary_operator = true;
 		}
 		else if (node_str == "else")
 		{
+			throw_error(else_used, "Cannot specify two else cases");
 
+			else_used = true;
+
+			finish_expression();
+			auto exp = new expression(output);
+			conditional_expression.back().first = exp;
+
+			output.clear();
+		}
+		else if (node_str == ":")
+		{
+			if (!else_used) finish_expression();
+
+			throw_error(output.size() == 0 && !else_used, "Missing condition");
+			throw_error(output.size() != 0 && else_used, "Invalid expression");
+
+			if (!else_used)
+			{
+				auto exp = new expression(output);
+				conditional_expression.push_back({ nullptr, exp });
+			}
+			else
+			{
+				conditional_expression.push_back({ nullptr, nullptr });
+			}
 		}
 		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
@@ -2077,51 +2174,12 @@ _shunting_yard_loop:
 	}
 
 _shunting_yard_end:
-	//Push all binary_operators left on the binary_operators stack to the output
-	auto itr = operators.rbegin();
-	while (itr != operators.rend())
-	{
-		output.push_back(*itr);
-		itr++;
-	}
+	finish_expression();
 
-	operators.clear();
-	new_node = nullptr;
+	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
-	size_t operands_check_sum = 0;
-	for (auto& n : output)
-	{
-		switch (n->type)
-		{
-		case node_type::scalar_literal:
-		case node_type::symbol:		
-		case node_type::variable:
-			operands_check_sum++; 
-			break;
-		case node_type::function:
-			throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
-			operands_check_sum -= n->value.function->second.arguments.size();
-			operands_check_sum++;
-			break;
-		case node_type::vector_contructor_operator:
-			throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
-			operands_check_sum -= n->value.vector_size;
-			operands_check_sum++;
-			break;
-		case node_type::binary_operator:
-			throw_error(operands_check_sum < 2, "Invalid expression");
-			operands_check_sum -= 2;
-			operands_check_sum++;
-			break;
-		case node_type::single_arg_left_parenthesis:
-		case node_type::unary_operator:
-		case node_type::vector_component_access:
-			throw_error(operands_check_sum < 1, "Invalid expression");
-			break;
-		}
-	}
-
-	throw_error(operands_check_sum != 1, "Invalid expression");
+	if (conditional_expression.size() != 0)
+		conditional_expression.back().first = new expression(output);
 }
 
 inline void expressions_parsing_utilities::validate_node(
@@ -2314,6 +2372,7 @@ expression* get_expression(
 {
 	expression::node* new_node = nullptr;
 
+	std::list<std::pair<expression*, expression*>> conditional_expression;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
@@ -2328,6 +2387,7 @@ expression* get_expression(
 		domain != nullptr,
 		domain,
 		new_node,
+		conditional_expression,
 		output,
 		operators,
 		error
@@ -2346,7 +2406,13 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	auto* exp = new expression(output);
+	expression* exp;
+
+	if (conditional_expression.size() == 0)
+		exp = new expression(output);
+	else
+		exp = new expression(conditional_expression);
+
 	return exp;
 }
 
@@ -2363,17 +2429,60 @@ const data_type* validate_expression(
 
 	std::vector<const data_type*> types;
 
+	auto validate_unconditional = [&](const decltype(exp->data.nodes)& nodes) -> const data_type*
+	{
+		for (auto& n : nodes)
+		{
+			expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
+			if (error != "") break;
+		}
+
+		if (error != "") return nullptr;
+
+		const data_type* type = types.back();
+		types.clear();
+
+		return type;
+	};
+
 	if (exp == nullptr) return nullptr;
 
-	for (auto& n : exp->data.nodes)
+	if (!exp->conditional)
+		return validate_unconditional(exp->data.nodes);
+
+	const data_type* return_type = nullptr;
+
+	int counter = 1;
+	for (auto& pair : exp->data.expressions_and_conditions)
 	{
-		expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
-		if (error != "") break;
+		const data_type* value_type = validate_unconditional(pair.first->data.nodes);
+		if (error != "") return nullptr;
+		if (return_type == nullptr) return_type = value_type;
+		else if (value_type != return_type)
+		{
+			error = "Variable type must be same in all if cases. First expression type: " + return_type->name + ", " 
+				"Expression number " + std::to_string(counter) + " type: " + value_type->name;
+			return nullptr;
+		}
+
+		if (pair.second == nullptr)
+		{
+			counter++;
+			continue;
+		}
+
+		const data_type* condition_type = validate_unconditional(pair.second->data.nodes);
+		if (error != "") return nullptr;
+		if (condition_type != bool_data_type)
+		{
+			error = "Conditions must evaluate to bool. Condition number " + std::to_string(counter) + " evaluate to: " + condition_type->name;
+			return nullptr;
+		}
+
+		counter++;
 	}
 
-	if (error != "") return nullptr;
-
-	return types.back();
+	return return_type;
 }
 
 void instantiate_function(
@@ -2522,11 +2631,7 @@ void domain_directives_handles::symbol(const std::string& source, matl::context*
 
 		state.iterator++;
 
-		if (source.at(state.iterator) == '>')
-		{
-			error = ("Expected symbol definition");
-			return;
-		}
+		throw_error(source.at(state.iterator) == '>', "Expected symbol definition");
 
 		size_t begin = state.iterator;
 		get_to_char('>', source, state.iterator);
