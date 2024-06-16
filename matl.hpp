@@ -77,11 +77,10 @@ private:
 const std::string language_version = "0.1";
 
 #define rethrow_error() if (error != "") return
-#define throw_error(condition, _error) if (condition) { error = _error; return; } 1
+#define throw_error(condition, _error) if (condition) { error = _error; return; }
 
 #include <list>
 #include <unordered_map>
-#include <memory>
 
 #pragma region String Ref
 
@@ -283,9 +282,9 @@ struct hgm_pointer_solver
 inline bool is_operator(const char& c)
 {
 	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
-		|| c == '>' || c == '<'
-		|| c == ')' || c == '(' || c == '.' || c == ',' 
-		|| c == '#');
+		 || c == '>' || c == '<' || c == '!'
+		 || c == ')' || c == '(' || c == '.' || c == ',' 
+		 || c == '#' || c == ':');
 }
 
 inline bool is_whitespace(const char& c)
@@ -406,9 +405,9 @@ struct variable_definition;
 struct function_definition;
 struct symbol_definition;
 
-const data_type*	   const get_data_type			(string_ref name);
-const unary_operator*  const get_unary_operator		(const char& symbol);
-const binary_operator* const get_binary_operator	(const char& symbol);
+const data_type*	   const get_data_type			(const string_ref& name);
+const unary_operator*  const get_unary_operator		(const string_ref& symbol);
+const binary_operator* const get_binary_operator	(const string_ref& symbol);
 
 struct data_type
 {
@@ -419,7 +418,7 @@ struct data_type
 
 struct unary_operator
 {
-	char symbol;
+	std::string symbol;
 	uint8_t precedence;
 	std::string operation_display_name;
 
@@ -427,7 +426,7 @@ struct unary_operator
 	std::vector<valid_types_set> allowed_types;
 
 	unary_operator(
-		char _symbol,
+		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
 		std::vector<valid_types_set> _allowed_types)
@@ -439,6 +438,7 @@ struct unary_operator::valid_types_set
 {
 	const data_type* operand_type;
 	const data_type* returned_type;
+
 	valid_types_set(
 		std::string _operand_type,
 		std::string _returned_type) :
@@ -448,7 +448,7 @@ struct unary_operator::valid_types_set
 
 struct binary_operator
 {
-	char symbol;
+	std::string symbol;
 	uint8_t precedence;
 	std::string operation_display_name;
 
@@ -456,7 +456,7 @@ struct binary_operator
 	std::vector<valid_types_set> allowed_types;
 
 	binary_operator(
-		char _symbol,
+		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
 		std::vector<valid_types_set> _allowed_types)
@@ -483,9 +483,28 @@ struct expression
 {
 	struct node;
 
-	std::list<node*> nodes;
+	struct literal_expression
+	{
+		std::list<node*> nodes;
+		literal_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
+		~literal_expression();
+	};
 
-	~expression();
+	struct equation
+	{
+		literal_expression* condition;
+		literal_expression* value;
+		equation(literal_expression* _condition, literal_expression* _value) :
+			condition(_condition), value(_value) {};
+		~equation() { delete condition; delete value; };
+	};
+
+	std::list<equation*> equations;
+
+	expression(std::list<equation*>& _equations)
+		: equations(std::move(_equations)) {};
+
+	~expression() { for (auto& eq : equations) delete eq; };
 };
 
 struct parsed_library;
@@ -521,11 +540,11 @@ struct expression::node
 	} value;
 };
 
-expression::~expression()
+expression::literal_expression::~literal_expression()
 {
-	for (auto& n : nodes)
-		delete n;
-}
+	for (auto& node : nodes) 
+		delete node;
+};
 
 struct variable_definition
 {
@@ -578,8 +597,12 @@ struct property_definition
 
 #pragma region Builtins
 
+const uint8_t logical_operators_precedence_begin = 1;
+const uint8_t numeric_operators_precedence_begin = 4;
+
 const std::vector<data_type> data_types
 {
+	{ "bool", },
 	{ "scalar", },
 	{ "vector2", },
 	{ "vector3", },
@@ -590,18 +613,60 @@ const std::vector<data_type> data_types
 //unary operators; symbol, display name, precedence, {input type, output type}
 const std::vector<unary_operator> unary_operators
 {
-	{ '-', "negate", 4, {
+	{ "-", "negate", numeric_operators_precedence_begin + 3, {
 		{"scalar", "scalar"},
 		{"vector2", "vector2"},
 		{"vector3", "vector3"},
 		{"vector4", "vector4"}
+	}},
+
+	{ "not", "negate", logical_operators_precedence_begin + 1, {
+		{"bool", "bool"},
 	}},
 };
 
 //binary operators; symbol, display name, precedence, {input type left, input type right, output type}
 const std::vector<binary_operator> binary_operators
 {
-	{ '+', "add", 1, {
+	{ "and", "conjunct", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
+	} },
+
+	{ "or", "alternate", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "xor", "exclusively alternate", logical_operators_precedence_begin, {
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "==", "compare with ==", logical_operators_precedence_begin + 1, {
+		{"scalar", "scalar", "bool"},
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "!=", "compare with !=", logical_operators_precedence_begin + 1, {
+		{"scalar", "scalar", "bool"},
+		{"bool", "bool", "bool"}
+	}},
+
+	{ "<", "compare with <", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ ">", "compare with >", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "<=", "compare with <=", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ ">=", "compare with >=", logical_operators_precedence_begin + 2, {
+		{"scalar", "scalar", "bool"}
+	}},
+
+	{ "+", "add", numeric_operators_precedence_begin, {
 		{"scalar", "scalar", "scalar"},
 
 		{"scalar", "vector2", "vector2"},
@@ -617,7 +682,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	}},
 
-	{ '-', "substract", 1, {
+	{ "-", "substract", numeric_operators_precedence_begin, {
 		{"scalar", "scalar", "scalar"},
 
 		{"vector2", "scalar", "vector2"},
@@ -630,7 +695,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	} },
 
-	{ '*', "multiply", 2, {
+	{ "*", "multiply", numeric_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "scalar"},
 
 		{"scalar", "vector2", "vector2"},
@@ -646,7 +711,7 @@ const std::vector<binary_operator> binary_operators
 		{"vector4", "vector4", "vector4"}
 	} },
 
-	{ '/', "divide", 2, {
+	{ "/", "divide", numeric_operators_precedence_begin + 1, {
 		{"scalar", "scalar", "scalar"},
 
 		{"vector2", "scalar", "vector2"},
@@ -675,11 +740,12 @@ const std::unordered_map<char, uint8_t> vector_components_names = {
 
 //data type applied to all integer and float literals eg. 1; 2; 3.14
 const data_type* scalar_data_type = get_data_type({ "scalar" });
+const data_type* bool_data_type = get_data_type({ "bool" });
 
 const char comment_char = '#';
 const char symbols_prefix = '$';
 
-const uint8_t functions_precedence = 3;
+const uint8_t functions_precedence = numeric_operators_precedence_begin + 2;
 
 inline bool is_vector(const data_type* type)
 {
@@ -712,7 +778,7 @@ inline const data_type* get_vector_type_of_size(uint8_t type)
 	return nullptr;
 }
 
-inline const data_type* const get_data_type(string_ref name)
+inline const data_type* const get_data_type(const string_ref& name)
 {
 	for (auto& type : data_types)
 		if (type.name == name)
@@ -720,7 +786,7 @@ inline const data_type* const get_data_type(string_ref name)
 	return nullptr;
 }
 
-inline const unary_operator* const get_unary_operator(const char& symbol)
+inline const unary_operator* const get_unary_operator(const string_ref& symbol)
 {
 	for (auto& op : unary_operators)
 		if (op.symbol == symbol)
@@ -728,7 +794,7 @@ inline const unary_operator* const get_unary_operator(const char& symbol)
 	return nullptr;
 }
 
-inline const binary_operator* const get_binary_operator(const char& symbol)
+inline const binary_operator* const get_binary_operator(const string_ref& symbol)
 {
 	for (auto& op : binary_operators)
 		if (op.symbol == symbol)
@@ -989,8 +1055,8 @@ struct parsed_libraries_stack
 private:
 	std::vector<string_ref> libraries_stack;
 public:
-	void push_parsed_lib(const std::string& lib_name, std::string& error);
-	void pop();
+	inline void push_parsed_lib(const std::string& lib_name, std::string& error);
+	inline void pop();
 	inline bool is_empty() { return libraries_stack.size() == 0; };
 };
 
@@ -1213,10 +1279,10 @@ std::list<matl::library_parsing_raport> matl::parse_library(const std::string li
 		return { raport };
 	}
 
-	auto raports = std::make_unique<std::list<matl::library_parsing_raport>>();
-	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, raports.get());
+	std::list<matl::library_parsing_raport> raports;
+	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, &raports);
 
-	return std::move(*raports.get());
+	return raports;
 }
 
 #pragma endregion
@@ -1500,8 +1566,8 @@ namespace expressions_parsing_utilities
 	string_ref get_node_str(const std::string& source, size_t& iterator, std::string& error);
 	bool is_function_call(const std::string& source, size_t& iterator);
 	bool is_scalar_literal(const string_ref& node_str, std::string& error);
-	bool is_unary_operator(const std::string& node_str);
-	bool is_binary_operator(const std::string& node_str);
+	bool is_unary_operator(const string_ref& node_str);
+	bool is_binary_operator(const string_ref& node_str);
 	int get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error);
 	int get_precedence(const expression::node* node);
 	bool is_any_of_left_parentheses(const expression::node* node);
@@ -1521,6 +1587,7 @@ namespace expressions_parsing_utilities
 		bool can_use_symbols,
 		const parsed_domain* domain,
 		expression::node*& new_node,
+		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::string& error
@@ -1535,8 +1602,21 @@ namespace expressions_parsing_utilities
 	);
 }
 
-string_ref expressions_parsing_utilities::get_node_str(const std::string& source, size_t& iterator, std::string& error)
+inline string_ref expressions_parsing_utilities::get_node_str(const std::string& source, size_t& iterator, std::string& error)
 {
+	if (source.size() >= iterator + 1)
+	{
+		if ((
+			source.at(iterator) == '!' || source.at(iterator) == '>' || source.at(iterator) == '<' || source.at(iterator) == '='
+			)
+			&& source.at(iterator + 1) == '='
+			)
+		{
+			iterator += 2;
+			return string_ref{ source, iterator - 2, iterator };
+		}
+	}
+
 	if (is_operator(source.at(iterator)))
 	{
 		iterator++;
@@ -1584,7 +1664,7 @@ string_ref expressions_parsing_utilities::get_node_str(const std::string& source
 	return string_ref{ source, begin, iterator };
 }
 
-bool expressions_parsing_utilities::is_function_call(const std::string& source, size_t& iterator)
+inline bool expressions_parsing_utilities::is_function_call(const std::string& source, size_t& iterator)
 {
 	get_spaces(source, iterator);
 
@@ -1594,7 +1674,7 @@ bool expressions_parsing_utilities::is_function_call(const std::string& source, 
 	return (source.at(iterator) == '(');
 }
 
-bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
+inline bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
 {
 	int dot_pos = -1;
 
@@ -1612,19 +1692,17 @@ bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str
 	return true;
 }
 
-bool expressions_parsing_utilities::is_unary_operator(const std::string& node_str)
+inline bool expressions_parsing_utilities::is_unary_operator(const string_ref& node_str)
 {
-	if (node_str.size() != 1) return false;
-	return get_unary_operator(node_str.at(0)) != nullptr;
+	return get_unary_operator(node_str) != nullptr;
 }
 
-bool expressions_parsing_utilities::is_binary_operator(const std::string& node_str)
+inline bool expressions_parsing_utilities::is_binary_operator(const string_ref& node_str)
 {
-	if (node_str.size() != 1) return false;
-	return get_binary_operator(node_str.at(0)) != nullptr;
+	return get_binary_operator(node_str) != nullptr;
 }
 
-int expressions_parsing_utilities::get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error)
+inline int expressions_parsing_utilities::get_comas_inside_parenthesis(const std::string& source, size_t iterator, std::string& error)
 {
 	int parenthesis_deepness = 0;
 	int comas = 0;
@@ -1713,6 +1791,7 @@ void expressions_parsing_utilities::shunting_yard(
 	bool can_use_symbols,
 	const parsed_domain* domain,
 	expression::node*& new_node,
+	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
 	std::string& error
@@ -1721,10 +1800,6 @@ void expressions_parsing_utilities::shunting_yard(
 	using node = expression::node;
 	using node_type = node::node_type;
 
-	bool accepts_right_unary_operator = true;
-	bool expecting_library_function = false;
-	string_ref library_name = {nullptr};
-	
 	auto push_vector_or_parenthesis = [&]()
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
@@ -1788,7 +1863,66 @@ void expressions_parsing_utilities::shunting_yard(
 		}
 	};
 
+	auto finish_expression = [&]()
+	{
+		//Push all binary_operators left on the binary_operators stack to the output
+		auto itr = operators.rbegin();
+		while (itr != operators.rend())
+		{
+			output.push_back(*itr);
+			itr++;
+		}
+
+		operators.clear();
+		new_node = nullptr;
+
+		size_t operands_check_sum = 0;
+		for (auto& n : output)
+		{
+			switch (n->type)
+			{
+			case node_type::scalar_literal:
+			case node_type::symbol:
+			case node_type::variable:
+				operands_check_sum++;
+				break;
+			case node_type::function:
+				throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
+				operands_check_sum -= n->value.function->second.arguments.size();
+				operands_check_sum++;
+				break;
+			case node_type::vector_contructor_operator:
+				throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
+				operands_check_sum -= n->value.vector_size;
+				operands_check_sum++;
+				break;
+			case node_type::binary_operator:
+				throw_error(operands_check_sum < 2, "Invalid expression");
+				operands_check_sum -= 2;
+				operands_check_sum++;
+				break;
+			case node_type::single_arg_left_parenthesis:
+			case node_type::unary_operator:
+			case node_type::vector_component_access:
+				throw_error(operands_check_sum < 1, "Invalid expression");
+				break;
+			}
+		}
+
+		throw_error(operands_check_sum != 1, "Invalid expression");
+	};
+
 	get_spaces(source, iterator);
+
+	bool accepts_right_unary_operator = true;
+	bool expecting_library_function = false;
+
+	string_ref library_name = { nullptr };
+
+	bool if_used = false;
+	bool else_used = false;	
+
+	expression* condition_buffer = nullptr;
 
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
@@ -1798,15 +1932,67 @@ _shunting_yard_loop:
 		rethrow_error();
 
 		if (node_str.at(0) == comment_char)
-			goto _shunting_yard_end;
+			goto _shunting_yard_end;		//error for multline
 
 		size_t iterator2 = iterator;
 		throw_error(expecting_library_function && !is_function_call(source, iterator2), "Expected function call");
 
-		if (is_unary_operator(node_str) && accepts_right_unary_operator)
+		if (node_str == "if")
+		{
+			throw_error(else_used, "Cannot add if-s after an else statement");
+			throw_error(if_used && output.size() == 0, "Invalid Expression");
+			throw_error(!if_used && output.size() != 0, "Invalid Expression");
+
+			if (if_used)
+			{
+				finish_expression();
+				equations.back()->value = new expression::literal_expression(output);
+			}
+
+			if_used = true;
+			accepts_right_unary_operator = true;
+		}
+		else if (node_str == "else")
+		{
+			throw_error(!if_used, "else can be only used after if statement");
+			throw_error(output.size() == 0, "Invalid Expression");
+			throw_error(else_used, "Cannot specify two else cases");
+
+			finish_expression();
+			equations.back()->value = new expression::literal_expression(output);
+
+			else_used = true;
+			accepts_right_unary_operator = true;
+		}
+		else if (node_str == ":")
+		{
+			if (!else_used) finish_expression();
+
+			throw_error(!if_used, ": can be only used after if or else statements");
+			throw_error(output.size() == 0 && !else_used, "Missing condition");
+			throw_error(output.size() != 0 && else_used, "Invalid expression");
+
+			if (!else_used)
+			{
+				equations.push_back(new expression::equation{
+					new expression::literal_expression(output),
+					nullptr
+				});
+			}
+			else
+			{
+				equations.push_back(new expression::equation{
+					nullptr,
+					nullptr
+				});
+			}
+
+			accepts_right_unary_operator = true;
+		}
+		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
 			new_node->type = node_type::unary_operator;
-			new_node->value.unary_operator = get_unary_operator(node_str.at(0));
+			new_node->value.unary_operator = get_unary_operator(node_str);
 
 			insert_operator(operators, output, new_node);
 
@@ -1815,7 +2001,7 @@ _shunting_yard_loop:
 		else if (is_binary_operator(node_str))
 		{
 			new_node->type = node_type::binary_operator;
-			new_node->value.binary_operator = get_binary_operator(node_str.at(0));
+			new_node->value.binary_operator = get_binary_operator(node_str);
 
 			insert_operator(operators, output, new_node);
 
@@ -1844,21 +2030,12 @@ _shunting_yard_loop:
 			auto components = get_string_ref(source, iterator, error);
 
 			rethrow_error();
-
-			if (components.size() > 4)
-			{
-				error = "Constructed vector is too long: " + std::string(node_str);
-				return;
-			}			
+			throw_error(components.size() > 4, "Constructed vector is too long: " + std::string(node_str));
 
 			for (size_t i = 0; i < components.size(); i++)
 			{
 				auto itr = vector_components_names.find(components.at(i));
-				if (itr == vector_components_names.end())
-				{
-					error = "No such vector component: " + components.at(i);
-					return;
-				}
+				throw_error(itr == vector_components_names.end(), error = "No such vector component: " + components.at(i));
 				new_node->value.included_vector_components.push_back(itr->second);
 			}
 
@@ -2010,51 +2187,17 @@ _shunting_yard_loop:
 	}
 
 _shunting_yard_end:
-	//Push all binary_operators left on the binary_operators stack to the output
-	auto itr = operators.rbegin();
-	while (itr != operators.rend())
-	{
-		output.push_back(*itr);
-		itr++;
-	}
+	finish_expression();
 
-	operators.clear();
-	new_node = nullptr;
+	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
-	size_t operands_check_sum = 0;
-	for (auto& n : output)
-	{
-		switch (n->type)
-		{
-		case node_type::scalar_literal:
-		case node_type::symbol:		
-		case node_type::variable:
-			operands_check_sum++; 
-			break;
-		case node_type::function:
-			throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
-			operands_check_sum -= n->value.function->second.arguments.size();
-			operands_check_sum++;
-			break;
-		case node_type::vector_contructor_operator:
-			throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
-			operands_check_sum -= n->value.vector_size;
-			operands_check_sum++;
-			break;
-		case node_type::binary_operator:
-			throw_error(operands_check_sum < 2, "Invalid expression");
-			operands_check_sum -= 2;
-			operands_check_sum++;
-			break;
-		case node_type::single_arg_left_parenthesis:
-		case node_type::unary_operator:
-		case node_type::vector_component_access:
-			throw_error(operands_check_sum < 1, "Invalid expression");
-			break;
-		}
-	}
-
-	throw_error(operands_check_sum != 1, "Invalid expression");
+	if (equations.size() != 0)
+		equations.back()->value = new expression::literal_expression(output);
+	else
+		equations.push_back(new expression::equation{
+			nullptr,
+			new expression::literal_expression(output)
+		});
 }
 
 inline void expressions_parsing_utilities::validate_node(
@@ -2247,6 +2390,7 @@ expression* get_expression(
 {
 	expression::node* new_node = nullptr;
 
+	std::list<expression::equation*> equations;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
@@ -2261,6 +2405,7 @@ expression* get_expression(
 		domain != nullptr,
 		domain,
 		new_node,
+		equations,
 		output,
 		operators,
 		error
@@ -2279,9 +2424,7 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	auto* exp = new expression;
-	exp->nodes = std::move(output);
-	return exp;
+	return new expression(equations);
 }
 
 const data_type* validate_expression(
@@ -2297,17 +2440,57 @@ const data_type* validate_expression(
 
 	std::vector<const data_type*> types;
 
+	auto validate_literal_expression = [&](const expression::literal_expression* le) -> const data_type*
+	{
+		for (auto& n : le->nodes)
+		{
+			expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
+			if (error != "") break;
+		}
+
+		if (error != "") return nullptr;
+
+		const data_type* type = types.back();
+		types.clear();
+
+		return type;
+	};
+
 	if (exp == nullptr) return nullptr;
 
-	for (auto& n : exp->nodes)
+	const data_type* return_type = nullptr;
+
+	int counter = 1;
+	for (auto& equation : exp->equations)
 	{
-		expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
-		if (error != "") break;
+		const data_type* value_type = validate_literal_expression(equation->value);
+		if (error != "") return nullptr;
+		if (return_type == nullptr) return_type = value_type;
+		else if (value_type != return_type)
+		{
+			error = "Variable type must be same in all if cases. First expression type: " + return_type->name + ", " 
+				"Expression number " + std::to_string(counter) + " type: " + value_type->name;
+			return nullptr;
+		}
+
+		if (equation->condition == nullptr)
+		{
+			counter++;
+			continue;
+		}
+
+		const data_type* condition_type = validate_literal_expression(equation->condition);
+		if (error != "") return nullptr;
+		if (condition_type != bool_data_type)
+		{
+			error = "Conditions must evaluate to bool. Condition number " + std::to_string(counter) + " evaluate to: " + condition_type->name;
+			return nullptr;
+		}
+
+		counter++;
 	}
 
-	if (error != "") return nullptr;
-
-	return types.back();
+	return return_type;
 }
 
 void instantiate_function(
@@ -2456,11 +2639,7 @@ void domain_directives_handles::symbol(const std::string& source, matl::context*
 
 		state.iterator++;
 
-		if (source.at(state.iterator) == '>')
-		{
-			error = ("Expected symbol definition");
-			return;
-		}
+		throw_error(source.at(state.iterator) == '>', "Expected symbol definition");
 
 		size_t begin = state.iterator;
 		get_to_char('>', source, state.iterator);
