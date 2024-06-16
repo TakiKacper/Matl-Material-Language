@@ -282,9 +282,9 @@ struct hgm_pointer_solver
 inline bool is_operator(const char& c)
 {
 	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
-		|| c == '>' || c == '<'
-		|| c == ')' || c == '(' || c == '.' || c == ',' 
-		|| c == '#' || c == ':');
+		 || c == '>' || c == '<' || c == '!'
+		 || c == ')' || c == '(' || c == '.' || c == ',' 
+		 || c == '#' || c == ':');
 }
 
 inline bool is_whitespace(const char& c)
@@ -632,20 +632,22 @@ const std::vector<binary_operator> binary_operators
 		{"bool", "bool", "bool"}
 	} },
 
-	{ "or ", "alternate", logical_operators_precedence_begin, {
+	{ "or", "alternate", logical_operators_precedence_begin, {
 		{"bool", "bool", "bool"}
 	}},
 
-	{ "xor ", "exclusively alternate", logical_operators_precedence_begin, {
+	{ "xor", "exclusively alternate", logical_operators_precedence_begin, {
 		{"bool", "bool", "bool"}
 	}},
 
 	{ "==", "compare with ==", logical_operators_precedence_begin + 1, {
-		{"scalar", "scalar", "bool"}
+		{"scalar", "scalar", "bool"},
+		{"bool", "bool", "bool"}
 	}},
 
 	{ "!=", "compare with !=", logical_operators_precedence_begin + 1, {
-		{"scalar", "scalar", "bool"}
+		{"scalar", "scalar", "bool"},
+		{"bool", "bool", "bool"}
 	}},
 
 	{ "<", "compare with <", logical_operators_precedence_begin + 2, {
@@ -1602,6 +1604,19 @@ namespace expressions_parsing_utilities
 
 inline string_ref expressions_parsing_utilities::get_node_str(const std::string& source, size_t& iterator, std::string& error)
 {
+	if (source.size() >= iterator + 1)
+	{
+		if ((
+			source.at(iterator) == '!' || source.at(iterator) == '>' || source.at(iterator) == '<' || source.at(iterator) == '='
+			)
+			&& source.at(iterator + 1) == '='
+			)
+		{
+			iterator += 2;
+			return string_ref{ source, iterator - 2, iterator };
+		}
+	}
+
 	if (is_operator(source.at(iterator)))
 	{
 		iterator++;
@@ -1943,10 +1958,11 @@ _shunting_yard_loop:
 			throw_error(output.size() == 0, "Invalid Expression");
 			throw_error(else_used, "Cannot specify two else cases");
 
-			else_used = true;
-
 			finish_expression();
 			equations.back()->value = new expression::literal_expression(output);
+
+			else_used = true;
+			accepts_right_unary_operator = true;
 		}
 		else if (node_str == ":")
 		{
@@ -1970,6 +1986,8 @@ _shunting_yard_loop:
 					nullptr
 				});
 			}
+
+			accepts_right_unary_operator = true;
 		}
 		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
