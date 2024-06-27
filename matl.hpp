@@ -56,6 +56,7 @@ private:
 	friend domain_parsing_raport matl::parse_domain(const std::string domain_name, const std::string& domain_source, matl::context* context);
 
 public:
+	void add_domain_insertion(std::string name, std::string insertion);
 	void add_custom_using_case_handle(std::string _case, custom_using_case_handle callback);
 	void set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle);
 
@@ -807,11 +808,58 @@ inline const binary_operator* const get_binary_operator(const string_ref& symbol
 
 #pragma endregion
 
+#pragma region Translators
+
+struct translator;
+struct material_parsing_state;
+
+std::unordered_map<std::string, translator*> translators;
+
+struct used_function_instance_info;
+
+struct translator
+{
+	using expressions_translator = std::string(*)(
+		const expression* const& exp,
+		const material_parsing_state& state
+		);
+	const expressions_translator _expression_translator;
+
+	using variables_declarations_translator = std::string(*)(
+		const string_ref& name,
+		const variable_definition* const& var,
+		const material_parsing_state& state
+		);
+	const variables_declarations_translator _variable_declaration_translator;
+
+	using functions_translator = std::string(*)(
+		const function_instance* instance,
+		const used_function_instance_info* info,
+		const material_parsing_state& state
+		);
+	const functions_translator _functions_translator;
+
+	translator(
+		std::string _language_name,
+		expressions_translator __expression_translator,
+		variables_declarations_translator __variable_declaration_translator,
+		functions_translator __functions_translator
+	) : _expression_translator(__expression_translator),
+		_variable_declaration_translator(__variable_declaration_translator),
+		_functions_translator(__functions_translator)
+	{
+		translators.insert({ _language_name, this });
+	};
+};
+
+#pragma endregion
+
 #pragma region Domain types
 
 enum class directive_type
 {
 	dump_block,
+	dump_insertion,
 	dump_variables,
 	dump_functions,
 	dump_property,
@@ -842,6 +890,10 @@ struct parsed_domain
 	heterogeneous_map<std::string, symbol_definition, hgm_string_solver> symbols;
 };
 
+#pragma endregion
+
+#pragma region Libraries Parsing Types
+
 struct parsed_library
 {
 	heterogeneous_map<std::string, function_definition, hgm_string_solver> functions;
@@ -850,57 +902,13 @@ using libraries_collection = heterogeneous_map<std::string, parsed_library*, hgm
 
 #pragma endregion
 
-#pragma region Translators
-
-struct translator;
-struct material_parsing_state;
-
-std::unordered_map<std::string, translator*> translators;
-
-struct used_function_instance_info;
-
-struct translator
-{
-	using expressions_translator = std::string(*)(
-		const expression* const& exp,
-		const material_parsing_state& state
-	);
-	const expressions_translator _expression_translator;
-
-	using variables_declarations_translator = std::string(*)(
-		const string_ref& name,
-		const variable_definition* const& var,
-		const material_parsing_state& state
-	);
-	const variables_declarations_translator _variable_declaration_translator;
-
-	using functions_translator = std::string(*)(
-		const function_instance* instance,
-		const used_function_instance_info* info,
-		const material_parsing_state& state
-	);
-	const functions_translator _functions_translator;
-
-	translator(
-		std::string _language_name,
-		expressions_translator __expression_translator,
-		variables_declarations_translator __variable_declaration_translator,
-		functions_translator __functions_translator
-	) : _expression_translator(__expression_translator),
-		_variable_declaration_translator(__variable_declaration_translator),
-		_functions_translator(__functions_translator)
-	{
-		translators.insert({ _language_name, this });
-	};
-};
-
-#pragma endregion
-
 #pragma region Context implementation
 
 struct context_public_implementation
 {
 	heterogeneous_map<std::string, parsed_domain*, hgm_string_solver> domains;
+	heterogeneous_map<std::string, std::string, hgm_string_solver> domain_insertions;
+
 	heterogeneous_map<std::string, parsed_library*, hgm_string_solver> libraries;
 	heterogeneous_map<std::string, matl::custom_using_case_handle*, hgm_string_solver> custom_using_handles;
 
@@ -939,16 +947,16 @@ struct domain_parsing_state
 };
 
 using directive_handle =
-	void(*)(const std::string& material_source, matl::context* context, domain_parsing_state& state, std::string& error);
+	void(*)(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);;
 
 namespace domain_directives_handles
 {
-	void expose(const std::string&, matl::context*, domain_parsing_state&, std::string&);
-	void end(const std::string&, matl::context*, domain_parsing_state&, std::string&);
-	void property(const std::string&, matl::context*, domain_parsing_state&, std::string&);
-	void symbol(const std::string&, matl::context*, domain_parsing_state&, std::string&);
-	void dump(const std::string&, matl::context*, domain_parsing_state&, std::string&);
-	void split(const std::string&, matl::context*, domain_parsing_state&, std::string&);
+	void expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void dump(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void split(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
 }
 
 heterogeneous_map<std::string, directive_handle, hgm_string_solver> directives_handles_map =
@@ -1012,7 +1020,7 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 		}
 		else
 		{
-			handle->second(source, context, state, error);
+			handle->second(source, context->impl->impl, state, error);
 			if (error != "") goto _parse_domain_handle_error;
 
 			get_spaces(source, state.iterator);
@@ -1464,6 +1472,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto& translator = context->impl->impl.translator;
 
+	std::string invalid_insertion;
+
 	for (auto& directive : state.domain->directives)
 	{
 		using directive_type = directive_type;
@@ -1472,6 +1482,9 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		{
 		case directive_type::dump_block:
 			result.sources.back() += directive.payload;
+			break;
+		case directive_type::dump_insertion:
+			result.sources.back() += context_impl.domain_insertions.at(directive.payload);
 			break;
 		case directive_type::split:
 			result.sources.push_back("");
@@ -1542,9 +1555,14 @@ void matl::destroy_context(context*& context)
 	context = nullptr;
 }
 
+void matl::context::add_domain_insertion(std::string name, std::string insertion)
+{
+	impl->impl.domain_insertions.insert({ std::move(name), std::move(insertion) });
+}
+
 void matl::context::add_custom_using_case_handle(std::string _case, matl::custom_using_case_handle callback)
 {
-	impl->impl.custom_using_handles.insert({ _case, callback });
+	impl->impl.custom_using_handles.insert({ std::move(_case), callback });
 }
 
 void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle)
@@ -2562,7 +2580,7 @@ void instantiate_function(
 
 #pragma region Directives handles implementations
 
-void domain_directives_handles::expose(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	if (state.expose_closure == true)
 		error = "Cannot use this directive here";
@@ -2570,7 +2588,7 @@ void domain_directives_handles::expose(const std::string& source, matl::context*
 	state.expose_closure = true;
 }
 
-void domain_directives_handles::end(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	if (state.expose_closure == false)
 		error = "Cannot use this directive here";
@@ -2578,7 +2596,7 @@ void domain_directives_handles::end(const std::string& source, matl::context* co
 	state.expose_closure = false;
 }
 
-void domain_directives_handles::property(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	if (state.expose_closure)
 	{
@@ -2620,7 +2638,7 @@ void domain_directives_handles::property(const std::string& source, matl::contex
 	}
 }
 
-void domain_directives_handles::symbol(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	if (state.expose_closure)
 	{
@@ -2629,11 +2647,7 @@ void domain_directives_handles::symbol(const std::string& source, matl::context*
 		if (error != "") return;
 
 		auto type = get_data_type(type_name);
-		if (type == nullptr)
-		{
-			error = "No such type: " + std::string(type_name);
-			return;
-		}
+		throw_error(type == nullptr, "No such type: " + std::string(type_name));
 
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
@@ -2660,27 +2674,31 @@ void domain_directives_handles::symbol(const std::string& source, matl::context*
 		error = "Cannot use this directive here";
 }
 
-void domain_directives_handles::dump(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::dump(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	std::string temperr;
 	get_spaces(source, state.iterator);
-	auto dump_what = get_string_ref(source, state.iterator, temperr);
+	auto dump_type = get_string_ref(source, state.iterator, error);
+	rethrow_error();
 
-	if (dump_what == "variables")
-		state.domain->directives.push_back(
-			{ directive_type::dump_variables, {} }
-	);
-	else if (dump_what == "functions")
-		state.domain->directives.push_back(
-			{ directive_type::dump_functions, {} }
-	);
+	if (dump_type == "variables")
+		state.domain->directives.push_back({ directive_type::dump_variables, {} });
+	else if (dump_type == "functions")
+		state.domain->directives.push_back({ directive_type::dump_functions, {} });
+	else if (dump_type == "insertion")
+	{
+		get_spaces(source, state.iterator);
+		auto insertion = get_string_ref(source, state.iterator, error);
+		rethrow_error();
+		throw_error(context.domain_insertions.find(insertion) == context.domain_insertions.end(), "No such insertion: " + std::string(insertion));
+		state.domain->directives.push_back({ directive_type::dump_insertion, insertion });
+	}
 	else
-		error = "Invalid dump target: " + std::string(dump_what);
+		error = "Invalid dump type: " + std::string(dump_type);
 
 	get_to_char('>', source, state.iterator);
 }
 
-void domain_directives_handles::split(const std::string& source, matl::context* context, domain_parsing_state& state, std::string& error)
+void domain_directives_handles::split(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	state.domain->directives.push_back(
 		{ directive_type::split, {} }
