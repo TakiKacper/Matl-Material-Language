@@ -280,14 +280,21 @@ struct hgm_pointer_solver
 
 #pragma region String traversion
 
+inline bool is_digit(const char& c)
+{
+	return (c >= '0' && c <= '9');
+}
+
 //does not check if char is a matl operator
 //insted checks if char is one of the characters that should end a string_ref
 inline bool is_operator(const char& c)
 {
-	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
+	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '^'|| c == '='
 		 || c == '>' || c == '<' || c == '!'
 		 || c == ')' || c == '(' || c == '.' || c == ',' 
-		 || c == '#' || c == ':');
+		 || c == '#' || c == ':'
+		 || c == '"' || c == '$' || c == '&' || c == '\'' ||  c == '?'
+		 || c == '>' || c == '<' || c == '@' || c == ']' || c == '[' || c == ']' || c == '`' || c == '~');
 }
 
 inline bool is_whitespace(const char& c)
@@ -1653,7 +1660,7 @@ inline string_ref expressions_parsing_utilities::get_node_str(const std::string&
 	{
 		const char& c = source.at(iterator);
 
-		if (!isdigit(c) && c != '.') only_digits = false;
+		if (!is_digit(c) && c != '.') only_digits = false;
 
 		if (is_operator(c))
 		{
@@ -1703,7 +1710,7 @@ inline bool expressions_parsing_utilities::is_scalar_literal(const string_ref& n
 	{
 		if (node_str.at(i) == '.' && dot_pos == -1)
 			dot_pos = i;
-		else if (!isdigit(node_str.at(i)))
+		else if (!is_digit(node_str.at(i)))
 			return false;
 	}
 
