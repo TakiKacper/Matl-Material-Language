@@ -1825,8 +1825,7 @@ void expressions_parsing_utilities::shunting_yard(
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
 
-		if (error != "")
-			return;
+		rethrow_error();
 
 		if (comas == 0)
 			new_node->type = node_type::single_arg_left_parenthesis;
@@ -2582,17 +2581,13 @@ void instantiate_function(
 
 void domain_directives_handles::expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure == true)
-		error = "Cannot use this directive here";
-
+	throw_error(state.expose_closure == true, "Cannot use this directive here");
 	state.expose_closure = true;
 }
 
 void domain_directives_handles::end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure == false)
-		error = "Cannot use this directive here";
-
+	throw_error(state.expose_closure == false, "Cannot use this directive here");
 	state.expose_closure = false;
 }
 
@@ -2602,15 +2597,11 @@ void domain_directives_handles::property(const std::string& source, context_publ
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
-
-		if (error != "")
-			return;
+		rethrow_error();
 
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
-
-		if (error != "")
-			return;
+		rethrow_error();
 
 		auto type = get_data_type(type_name);
 		if (type == nullptr) error = "No such type: " + std::string(type_name);
@@ -2621,16 +2612,10 @@ void domain_directives_handles::property(const std::string& source, context_publ
 	{
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
-
-		if (error != "")
-			return;
+		rethrow_error();
 
 		auto itr = state.domain->properties.find(name);
-		if (itr == state.domain->properties.end())
-		{
-			error = "No such property: " + std::string(name);
-			return;
-		}
+		throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(name));
 
 		state.domain->directives.push_back(
 			{ directive_type::dump_property, std::move(name) }
@@ -2644,15 +2629,14 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
-		if (error != "") return;
+		rethrow_error();
 
 		auto type = get_data_type(type_name);
 		throw_error(type == nullptr, "No such type: " + std::string(type_name));
 
 		get_spaces(source, state.iterator);
 		auto name = get_string_ref(source, state.iterator, error);
-
-		if (error != "") return;
+		rethrow_error();
 
 		get_spaces(source, state.iterator);
 		if (source.at(state.iterator) != '=')
@@ -2729,11 +2713,9 @@ void material_keywords_handles::let
 
 	get_spaces(source, iterator);
 	auto var_name = get_string_ref(source, iterator, error);
-
 	rethrow_error();
 
-	if (var_name.at(0) == symbols_prefix)
-		error = "Cannot declare symbols in material";
+	throw_error(var_name.at(0) == symbols_prefix, "Cannot declare symbols in material");
 
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
@@ -2796,12 +2778,7 @@ void material_keywords_handles::property
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
 	throw_error(state.domain == nullptr, "Cannot use property since the domain has not yet been specified");
-
-	if (state.function_body)
-	{
-		error = "Cannot use property in this scope";
-		return;
-	}
+	throw_error(state.function_body, "Cannot use property in this scope");
 
 	auto& iterator = state.iterator;
 
@@ -2817,11 +2794,7 @@ void material_keywords_handles::property
 		error = "Expected '='";
 
 	auto itr = state.domain->properties.find(property_name);
-	if (itr == state.domain->properties.end())
-	{
-		error = "No such property: " + std::string(property_name);
-		return;
-	}
+	throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(property_name));
 
 	throw_error(state.properties.find(property_name) != state.properties.end(), 
 		"Equation for property " + std::string(property_name) + " is already specified");
@@ -2850,11 +2823,7 @@ void material_keywords_handles::property
 void material_keywords_handles::_using
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
-	if (state.function_body)
-	{
-		error = "Cannot use using in this scope";
-		return;
-	}
+	throw_error(state.function_body, "Cannot use using in this scope");
 
 	auto& iterator = state.iterator;
 
@@ -2865,17 +2834,13 @@ void material_keywords_handles::_using
 
 	if (target == "domain")
 	{
+		throw_error(state.domain != nullptr, "Domain is already specified");
+
 		get_spaces(source, iterator);
 		auto domain_name = get_rest_of_line(source, iterator);
-
-		if (state.domain != nullptr)
-			error = "Domain is already specified";
-
 		auto itr = context.domains.find(domain_name);
-		if (itr == context.domains.end())
-			error = "No such domain: " + std::string(domain_name);
 
-		rethrow_error();
+		throw_error(itr == context.domains.end(), "No such domain: " + std::string(domain_name));
 
 		state.domain = itr->second;
 	}
@@ -2895,17 +2860,11 @@ void material_keywords_handles::_using
 	else //Call custom case
 	{
 		auto itr = context.custom_using_handles.find(target);
-		if (itr == context.custom_using_handles.end())
-		{
-			error = "No such using case: " + std::string(target);
-			return;
-		}
-		else
-		{
-			get_spaces(source, iterator);
-			auto arg = get_rest_of_line(source, iterator);;
-			itr->second(arg, error);
-		}
+		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(target));
+
+		get_spaces(source, iterator);
+		auto arg = get_rest_of_line(source, iterator);;
+		itr->second(arg, error);
 	}
 }
 
@@ -2984,17 +2943,12 @@ void library_keywords_handles::property
 void library_keywords_handles::_using
 	(const std::string& source, context_public_implementation& context, library_parsing_state& state, std::string& error)
 {
-	if (state.function_body)
-	{
-		error = "Cannot use using in this scope";
-		return;
-	}
+	throw_error(state.function_body, "Cannot use using in this scope");
 
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
 	auto target = get_string_ref(source, iterator, error);
-
 	rethrow_error();
 
 	if (target == "domain")
@@ -3007,8 +2961,7 @@ void library_keywords_handles::_using
 		auto library_name = get_rest_of_line(source, iterator);
 
 		auto itr = context.libraries.find(library_name);
-		if (itr == context.libraries.end())
-			error = "No such library: " + std::string(library_name);
+		throw_error(itr == context.libraries.end(), "No such library: " + std::string(library_name));
 
 		if (itr == context.libraries.end() && context.dlprh != nullptr)
 		{
@@ -3032,17 +2985,11 @@ void library_keywords_handles::_using
 	else //Call custom case
 	{
 		auto itr = context.custom_using_handles.find(target);
-		if (itr == context.custom_using_handles.end())
-		{
-			error = "No such using case: " + std::string(target);
-			return;
-		}
-		else
-		{
-			get_spaces(source, iterator);
-			auto arg = get_rest_of_line(source, iterator);;
-			itr->second(arg, error);
-		}
+		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(target));
+
+		get_spaces(source, iterator);
+		auto arg = get_rest_of_line(source, iterator);;
+		itr->second(arg, error);
 	}
 }
 
@@ -3070,28 +3017,16 @@ void handles_common::func(const std::string& source, context_public_implementati
 
 	get_spaces(source, iterator);
 	std::string name = get_string_ref(source, iterator, error);
-	if (name == "") error = "Expected function name";
-	rethrow_error();
-
+	throw_error(name == "", "Expected function name");
 	throw_error(state.functions.find(name) != state.functions.end(),
 		"Function " + std::string(name) + " already exists");
 
-	{
-		get_spaces(source, iterator);
-		if (is_at_source_end(source, iterator))
-		{
-			error = "";
-			return;
-		}
+	get_spaces(source, iterator);
 
-		if (source.at(iterator) != '(')
-		{
-			error = "Expected (";
-			return;
-		}
+	throw_error(is_at_source_end(source, iterator), "");
+	throw_error(source.at(iterator) != '(', "Expected (");
 
-		iterator++;
-	}
+	iterator++;
 
 	std::vector<std::string> arguments;
 
@@ -3117,11 +3052,7 @@ void handles_common::func(const std::string& source, context_public_implementati
 	iterator++;
 	get_spaces(source, iterator);
 
-	if (!is_at_line_end(source, iterator))
-	{
-		error = "Expected line end";
-		return;
-	}
+	throw_error(!is_at_line_end(source, iterator), "Expected line end");
 
 	auto& func_def = state.functions.insert({ name, {} })->second;
 	func_def.arguments = std::move(arguments);
@@ -3138,11 +3069,7 @@ void handles_common::_return(const std::string& source, context_public_implement
 	auto& iterator = state.iterator;
 	auto& func_def = state.functions.recent().second;
 
-	if (!state.function_body)
-	{
-		error = "Cannot return value from this scope";
-		return;
-	}
+	throw_error(!state.function_body, "Cannot return value from this scope");
 
 	state.function_body = false;
 
