@@ -253,6 +253,17 @@ public:
 			return itr;
 		}
 	}
+
+	inline void remove(const _key& key)
+	{
+		for (const_iterator itr = begin(); itr != end(); itr++)
+			if (_equality_solver::equal(itr->first, key))
+			{
+				records.remove(*itr);
+				return;
+			}
+		throw std::exception{"Invalid record"};
+	}
 };
 
 struct hgm_string_solver
@@ -1564,12 +1575,18 @@ void matl::destroy_context(context*& context)
 
 void matl::context::add_domain_insertion(std::string name, std::string insertion)
 {
-	impl->impl.domain_insertions.insert({ std::move(name), std::move(insertion) });
+	if (insertion == "")
+		impl->impl.domain_insertions.remove(name);
+	else
+		impl->impl.domain_insertions.insert({ std::move(name), std::move(insertion) });
 }
 
 void matl::context::add_custom_using_case_handle(std::string _case, matl::custom_using_case_handle callback)
 {
-	impl->impl.custom_using_handles.insert({ std::move(_case), callback });
+	if (callback == nullptr)
+		impl->impl.custom_using_handles.remove(_case);
+	else
+		impl->impl.custom_using_handles.insert({ std::move(_case), callback });
 }
 
 void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle)
