@@ -534,7 +534,7 @@ struct expression::node
 		const symbol_definition*								symbol;
 		const unary_operator*									unary_operator;
 		const binary_operator*									binary_operator;
-		uint8_t													vector_elements_count;			//tells how many elements vector consists of (element may be a scalar or vector)
+		std::pair<uint8_t, uint8_t>								vector_info;				//first is how many nodes build the vector, second is it's real size
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
 		parsed_library*											library;
@@ -1815,7 +1815,7 @@ void expressions_parsing_utilities::shunting_yard(
 		else if (comas <= 3)
 		{
 			new_node->type = node_type::vector_contructor_operator;
-			new_node->value.vector_elements_count = comas + 1;
+			new_node->value.vector_info.first = comas + 1;
 		}
 		else
 			error = "Constructed vector is too long";
@@ -1895,8 +1895,8 @@ void expressions_parsing_utilities::shunting_yard(
 				operands_check_sum++;
 				break;
 			case node_type::vector_contructor_operator:
-				throw_error(operands_check_sum < n->value.vector_elements_count, "Invalid expression");
-				operands_check_sum -= n->value.vector_elements_count;
+				throw_error(operands_check_sum < n->value.vector_info.first, "Invalid expression");
+				operands_check_sum -= n->value.vector_info.first;
 				operands_check_sum++;
 				break;
 			case node_type::binary_operator:
@@ -2307,9 +2307,10 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::vector_contructor_operator:
 	{
-		int created_vector_size = 0;
+		const auto& vector_constructor_nodes = n->value.vector_info.first;
+		auto& created_vector_size = n->value.vector_info.second = 0;
 
-		for (int i = 0; i < n->value.vector_elements_count; i++)
+		for (int i = 0; i < vector_constructor_nodes; i++)
 		{
 			auto& type = get_type(i);
 			throw_error(type != scalar_data_type && !is_vector(type), "Created vector must consist of scalars and vectors only")
@@ -2319,7 +2320,7 @@ inline void expressions_parsing_utilities::validate_node(
 		throw_error(created_vector_size > 4, "Created vector is too long - maximal vector length is 4, created vector length is " 
 			+ std::to_string(created_vector_size));
 
-		pop_types(n->value.vector_elements_count);
+		pop_types(vector_constructor_nodes);
 		types.push_back(get_vector_type_of_size(created_vector_size));
 		break;
 	}
