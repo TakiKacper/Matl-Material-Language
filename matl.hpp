@@ -279,6 +279,8 @@ struct hgm_pointer_solver
 
 #pragma region String traversion
 
+//does not check if char is a matl operator
+//insted checks if char is one of the characters that should end a string_ref
 inline bool is_operator(const char& c)
 {
 	return (c == '+' || c == '-' || c == '*' || c == '/' || c == '='
@@ -532,7 +534,7 @@ struct expression::node
 		const symbol_definition*								symbol;
 		const unary_operator*									unary_operator;
 		const binary_operator*									binary_operator;
-		uint8_t													vector_size;
+		uint8_t													vector_elements_count;			//tells how many elements vector consists of (element may be a scalar or vector)
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
 		parsed_library*											library;
@@ -758,6 +760,7 @@ inline bool is_vector(const data_type* type)
 
 inline uint8_t get_vector_size(const data_type* type)
 {
+	if (type == get_data_type({ "scalar" })) return 1;
 	if (type == get_data_type({ "vector2" })) return 2;
 	if (type == get_data_type({ "vector3" })) return 3;
 	if (type == get_data_type({ "vector4" })) return 4;
@@ -765,9 +768,9 @@ inline uint8_t get_vector_size(const data_type* type)
 	return 0;
 }
 
-inline const data_type* get_vector_type_of_size(uint8_t type)
+inline const data_type* get_vector_type_of_size(uint8_t size)
 {
-	switch (type)
+	switch (size)
 	{
 	case 1: return get_data_type({ "scalar" });
 	case 2: return get_data_type({ "vector2" });
@@ -1812,7 +1815,7 @@ void expressions_parsing_utilities::shunting_yard(
 		else if (comas <= 3)
 		{
 			new_node->type = node_type::vector_contructor_operator;
-			new_node->value.vector_size = comas + 1;
+			new_node->value.vector_elements_count = comas + 1;
 		}
 		else
 			error = "Constructed vector is too long";
@@ -1892,8 +1895,8 @@ void expressions_parsing_utilities::shunting_yard(
 				operands_check_sum++;
 				break;
 			case node_type::vector_contructor_operator:
-				throw_error(operands_check_sum < n->value.vector_size, "Invalid expression");
-				operands_check_sum -= n->value.vector_size;
+				throw_error(operands_check_sum < n->value.vector_elements_count, "Invalid expression");
+				operands_check_sum -= n->value.vector_elements_count;
 				operands_check_sum++;
 				break;
 			case node_type::binary_operator:
@@ -2304,14 +2307,20 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::vector_contructor_operator:
 	{
-		for (int i = 0; i < n->value.vector_size; i++)
+		int created_vector_size = 0;
+
+		for (int i = 0; i < n->value.vector_elements_count; i++)
 		{
 			auto& type = get_type(i);
-			throw_error(type != scalar_data_type, "Created vector must consist of scalars only");
+			throw_error(type != scalar_data_type && !is_vector(type), "Created vector must consist of scalars and vectors only")
+			created_vector_size += get_vector_size(type);
 		}
 
-		pop_types(n->value.vector_size);
-		types.push_back(get_vector_type_of_size(n->value.vector_size));
+		throw_error(created_vector_size > 4, "Created vector is too long - maximal vector length is 4, created vector length is " 
+			+ std::to_string(created_vector_size));
+
+		pop_types(n->value.vector_elements_count);
+		types.push_back(get_vector_type_of_size(created_vector_size));
 		break;
 	}
 	case node::node_type::function:
