@@ -2732,15 +2732,13 @@ void material_keywords_handles::let
 
 	rethrow_error();
 
-	auto check_if_already_exists = [&](const variables_collection& collection)
-	{
-		throw_error(collection.find(var_name) != collection.end(), 
-			"Variable " + std::string(var_name) + " already exists");
-	};
+	throw_error(state.functions.find(var_name) != state.functions.end(),
+		"Function named " + std::string(var_name) + " already exists");
 
 	if (!state.function_body)
 	{
-		check_if_already_exists(state.variables);
+		throw_error(state.variables.find(var_name) != state.variables.end(),
+			"Variable named " + std::string(var_name) + " already exists");
 
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
 		var_def.definition = get_expression(
@@ -2762,7 +2760,8 @@ void material_keywords_handles::let
 	{
 		auto& func_def = state.functions.recent().second;
 
-		check_if_already_exists(func_def.variables);
+		throw_error(func_def.variables.find(var_name) != func_def.variables.end(),
+			"Variable named " + std::string(var_name) + " already exists");
 
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 		var_def.definition = get_expression(
@@ -2879,6 +2878,10 @@ void material_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+
+	auto& name = state.functions.recent().first;
+	throw_error(state.variables.find(name) != state.variables.end(),
+		"Variable named " + std::string(name) + " already exists");
 }
 
 void material_keywords_handles::_return
@@ -2915,15 +2918,13 @@ void library_keywords_handles::let
 
 	rethrow_error();
 
-	auto check_if_already_exists = [&](const variables_collection& collection)
-	{
-		throw_error(collection.find(var_name) != collection.end(),
-			"Variable " + std::string(var_name) + " already exists");
-	};
-
 	auto& func_def = state.functions.recent().second;
 
-	check_if_already_exists(func_def.variables);
+	throw_error(func_def.variables.find(var_name) != func_def.variables.end(),
+		"Variable named " + std::string(var_name) + " already exists");
+
+	throw_error(state.functions.find(var_name) != state.functions.end(),
+		"Function named " + std::string(var_name) + " already exists");
 
 	auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 	var_def.definition = get_expression(
@@ -3025,8 +3026,9 @@ void handles_common::func(const std::string& source, context_public_implementati
 	get_spaces(source, iterator);
 	std::string name = get_string_ref(source, iterator, error);
 	throw_error(name == "", "Expected function name");
+
 	throw_error(state.functions.find(name) != state.functions.end(),
-		"Function " + std::string(name) + " already exists");
+		"Function named " + std::string(name) + " already exists");
 
 	get_spaces(source, iterator);
 
