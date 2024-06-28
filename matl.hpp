@@ -500,6 +500,9 @@ struct binary_operator::valid_types_set
 		returned_type(get_data_type(_returned_type)) {};
 };
 
+using named_variable = std::pair<std::string, variable_definition>;
+using named_function = std::pair<std::string, function_definition>;
+
 struct expression
 {
 	struct node;
@@ -522,8 +525,18 @@ struct expression
 
 	std::list<equation*> equations;
 
-	expression(std::list<equation*>& _equations)
-		: equations(std::move(_equations)) {};
+	std::vector<named_variable*> used_variables;
+	std::vector<named_function*> used_functions;
+
+	expression(
+		std::list<equation*>& _equations, 
+		std::vector<named_variable*>& _used_variables,
+		std::vector<named_function*>& _used_functions
+	) : 
+		equations(std::move(_equations)), 
+		used_variables(std::move(_used_variables)), 
+		used_functions(std::move(_used_functions))
+	{};
 
 	~expression() { for (auto& eq : equations) delete eq; };
 };
@@ -600,11 +613,11 @@ struct function_definition
 
 	std::vector<std::string> arguments;
 	variables_collection variables;
-	expression* result;
+	expression* returned_value;
 
 	std::list<function_instance> instances;
 
-	~function_definition() { delete result; };
+	~function_definition() { delete returned_value; };
 };
 using function_collection = heterogeneous_map<std::string, function_definition, hgm_string_solver>;
 
@@ -1379,10 +1392,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 {
 	if (context == nullptr)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = { "[0] Cannot parse material without context" };
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = { "[0] Cannot parse material without context" };
+		return returned_value;
 	}
 
 	material_parsing_state state;
@@ -1471,22 +1484,22 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	if (state.errors.size() != 0)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = std::move(state.errors);
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = std::move(state.errors);
+		return returned_value;
 	}
 
 	if (state.domain == nullptr)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = { "[0] Material does not specify the domain" };
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = { "[0] Material does not specify the domain" };
+		return returned_value;
 	}
 
-	parsed_material result;
-	result.sources = { "" };
+	parsed_material returned_value;
+	returned_value.sources = { "" };
 
 	auto& translator = context->impl->impl.translator;
 
@@ -1499,17 +1512,17 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		switch (directive.type)
 		{
 		case directive_type::dump_block:
-			result.sources.back() += directive.payload;
+			returned_value.sources.back() += directive.payload;
 			break;
 		case directive_type::dump_insertion:
-			result.sources.back() += context_impl.domain_insertions.at(directive.payload);
+			returned_value.sources.back() += context_impl.domain_insertions.at(directive.payload);
 			break;
 		case directive_type::split:
-			result.sources.push_back("");
+			returned_value.sources.push_back("");
 			break;
 		case directive_type::dump_property:
 		{
-			result.sources.back() += translator->_expression_translator(
+			returned_value.sources.back() += translator->_expression_translator(
 				state.properties.at(directive.payload).definition,
 				state
 			);
@@ -1517,7 +1530,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 		case directive_type::dump_variables:
 			for (auto& var : state.variables)
-				result.sources.back() += translator->_variable_declaration_translator(
+				returned_value.sources.back() += translator->_variable_declaration_translator(
 					var.first,
 					&var.second,
 					state
@@ -1525,7 +1538,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			break;
 		case directive_type::dump_functions:
 			for (auto itr = state.ever_used_functions.begin(); itr != state.ever_used_functions.end(); itr++)
-				result.sources.back() += translator->_functions_translator(
+				returned_value.sources.back() += translator->_functions_translator(
 					itr->first,
 					&itr->second,
 					state
@@ -1534,7 +1547,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 	}
 
-	return result;
+	return returned_value;
 }
 
 #pragma endregion
@@ -1635,6 +1648,8 @@ namespace expressions_parsing_utilities
 		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
+		std::vector<named_variable*>& used_variables,
+		std::vector<named_function*>& used_functions,
 		std::string& error
 	);
 	void validate_node(
@@ -1839,6 +1854,8 @@ void expressions_parsing_utilities::shunting_yard(
 	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
+	std::vector<named_variable*>& used_variables,
+	std::vector<named_function*>& used_functions,
 	std::string& error
 )
 {
@@ -2164,8 +2181,9 @@ _shunting_yard_loop:
 
 			new_node->type = node_type::function;
 			new_node->value.function = &(*itr);
+			used_functions.push_back(&(*itr));
 
-			throw_error(new_node->value.function->second.result == nullptr,
+			throw_error(new_node->value.function->second.returned_value == nullptr,
 				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 			);
 
@@ -2185,6 +2203,8 @@ _shunting_yard_loop:
 
 				new_node->value.variable = &(*itr);
 				output.push_back(new_node);
+
+				used_variables.push_back(&(*itr));
 
 				continue;
 			}
@@ -2445,6 +2465,9 @@ expression* get_expression(
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
+	std::vector<named_variable*> used_vars;
+	std::vector<named_function*> used_funcs;
+
 	expressions_parsing_utilities::shunting_yard(
 		source, 
 		iterator, 
@@ -2459,6 +2482,8 @@ expression* get_expression(
 		equations,
 		output,
 		operators,
+		used_vars,
+		used_funcs,
 		error
 	);
 
@@ -2475,7 +2500,7 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	return new expression(equations);
+	return new expression(equations, used_vars, used_funcs);
 }
 
 const data_type* validate_expression(
@@ -2585,7 +2610,7 @@ void instantiate_function(
 	}
 
 	std::string error2;
-	auto return_type = validate_expression(func_def.result, nullptr, functions, used_func_instances, error2);
+	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, used_func_instances, error2);
 
 	func_def.instances.push_back({});
 	auto& instance = func_def.instances.back();
@@ -3099,7 +3124,7 @@ void handles_common::_return(const std::string& source, context_public_implement
 
 	state.function_body = false;
 
-	func_def.result = get_expression(
+	func_def.returned_value = get_expression(
 		source,
 		iterator,
 		state.this_line_indentation_spaces,
