@@ -4,7 +4,6 @@
 //In order to implement parser in this translation unit
 
 #include <string>
-#include <vector>
 #include <list>
 
 #pragma region API declaration
@@ -16,21 +15,21 @@ namespace matl
 	struct parsed_material
 	{
 		bool success = false;
-		std::vector<std::string> sources;
-		std::vector<std::string> errors;
+		std::list<std::string> sources;
+		std::list<std::string> errors;
 	};
 
 	struct domain_parsing_raport
 	{
 		bool success = false;
-		std::vector<std::string> errors;
+		std::list<std::string> errors;
 	};
 
 	struct library_parsing_raport
 	{
 		std::string library_name;
 		bool success = false;
-		std::vector<std::string> errors;
+		std::list<std::string> errors;
 	};
 
 	using custom_using_case_callback = void(std::string args, std::string& error);
@@ -80,8 +79,8 @@ const std::string language_version = "0.1";
 #define rethrow_error() if (error != "") return
 #define throw_error(condition, _error) if (condition) { error = _error; return; }
 
-#include <list>
 #include <unordered_map>
+#include <vector>
 
 #pragma region String Ref
 
@@ -288,6 +287,43 @@ struct hgm_pointer_solver
 };
 
 #pragma endregion
+
+#pragma region Unsorted Set
+
+template<class _type>
+class unsorted_set
+{
+	std::vector<_type> elements;
+	using iterator = typename std::vector<_type>::iterator;
+	using reverse_iterator = typename std::vector<_type>::reverse_iterator;
+
+public:
+	void insert(_type element)
+	{
+		if (std::find(elements.begin(), elements.end(), element) == elements.end()) 
+			elements.push_back(element);
+	}
+
+	iterator begin()
+	{
+		return elements.begin();
+	}
+
+	iterator end()
+	{
+		return elements.end();
+	}
+
+	reverse_iterator rbegin()
+	{
+		return elements.rbegin();
+	}
+
+	reverse_iterator rend()
+	{
+		return elements.rend();
+	}
+};
 
 #pragma region String traversion
 
@@ -987,7 +1023,7 @@ struct domain_parsing_state
 	size_t iterator = 0;
 	parsed_domain* domain;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 
 	bool expose_scope = false;
 	bool dump_properties_depedencies_scope = false;
@@ -1156,7 +1192,7 @@ struct library_parsing_state
 	int this_line_indentation_spaces = 0;
 	bool function_body = false;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 	parsed_libraries_stack* parsed_libs_stack = nullptr;
 	std::list<matl::library_parsing_raport>* parsing_raports;
 
@@ -1367,7 +1403,7 @@ struct material_parsing_state
 
 	bool function_body = false;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 
 	variables_collection variables;
 	function_collection functions;
@@ -1405,6 +1441,27 @@ heterogeneous_map<std::string, keyword_handle, hgm_string_solver> keywords_handl
 		{"return",		material_keywords_handles::_return}
 	}
 };
+
+//recursively get all variables used by expression, used by dump variables
+void get_used_variables_recursive(const expression* exp, unsorted_set<named_variable*>& to_dump)
+{
+	for (auto& var : exp->used_variables)
+		to_dump.insert(var);
+
+	for (auto& var : exp->used_variables)
+		get_used_variables_recursive(var->second.definition, to_dump);
+}
+
+//same but for functions
+void get_used_functions_recursive(const expression* exp, unsorted_set<named_function*>& to_dump)
+{
+	for (auto& func : exp->used_functions)
+		to_dump.insert(func);
+
+	for (auto& func : exp->used_variables)
+		get_used_functions_recursive(func->second.definition, to_dump);
+}
+
 
 matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
 {
@@ -1547,14 +1604,26 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			break;
 		}
 		case directive_type::dump_variables:
-			for (auto& var : state.variables)
+		{
+			unsorted_set<named_variable*> to_dump;
+
+			for (auto& prop : directive.payload)
+			{
+				const auto& prop_exp = state.properties.at(directive.payload.at(0)).definition;
+				get_used_variables_recursive(prop_exp, to_dump);
+			}
+
+			for (auto itr = to_dump.rbegin(); itr != to_dump.rend(); itr++)
 				returned_value.sources.back() += translator->_variable_declaration_translator(
-					var.first,
-					&var.second,
+					(*itr)->first,
+					&(*itr)->second,
 					state
 				);
+
 			break;
+		}
 		case directive_type::dump_functions:
+		{
 			for (auto itr = state.ever_used_functions.begin(); itr != state.ever_used_functions.end(); itr++)
 				returned_value.sources.back() += translator->_functions_translator(
 					itr->first,
@@ -1562,6 +1631,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 					state
 				);
 			break;
+		}
 		}
 	}
 
