@@ -33,7 +33,7 @@ namespace matl
 		std::vector<std::string> errors;
 	};
 
-	using custom_using_case_handle = void(std::string args, std::string& error);
+	using custom_using_case_callback = void(std::string args, std::string& error);
 	using dynamic_library_parse_request_handle = const std::string*(const std::string& lib_name, std::string& error);
 
 	class context;
@@ -57,7 +57,7 @@ private:
 
 public:
 	void add_domain_insertion(std::string name, std::string insertion);
-	void add_custom_using_case_handle(std::string _case, custom_using_case_handle callback);
+	void add_custom_using_case_callback(std::string _case, custom_using_case_callback callback);
 	void set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle);
 
 private:
@@ -928,7 +928,7 @@ struct context_public_implementation
 	heterogeneous_map<std::string, std::string, hgm_string_solver> domain_insertions;
 
 	heterogeneous_map<std::string, parsed_library*, hgm_string_solver> libraries;
-	heterogeneous_map<std::string, matl::custom_using_case_handle*, hgm_string_solver> custom_using_handles;
+	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_handles;
 
 	matl::dynamic_library_parse_request_handle* dlprh = nullptr;
 	translator* translator = nullptr;
@@ -1581,7 +1581,7 @@ void matl::context::add_domain_insertion(std::string name, std::string insertion
 		impl->impl.domain_insertions.insert({ std::move(name), std::move(insertion) });
 }
 
-void matl::context::add_custom_using_case_handle(std::string _case, matl::custom_using_case_handle callback)
+void matl::context::add_custom_using_case_callback(std::string _case, matl::custom_using_case_callback callback)
 {
 	if (callback == nullptr)
 		impl->impl.custom_using_handles.remove(_case);
