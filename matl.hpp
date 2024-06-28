@@ -338,6 +338,21 @@ inline void get_to_char(char target, const std::string& source, size_t& iterator
 	}
 }
 
+inline void get_to_char_while_counting_lines(char target, const std::string& source, size_t& iterator, int& line_counter, bool& whitespaces_only)
+{
+	whitespaces_only = true;
+
+	while (source.at(iterator) != target)
+	{
+		if (source.at(iterator) == '\n') line_counter++;
+		else if (!is_whitespace(source.at(iterator))) whitespaces_only = false;
+
+		iterator++;
+		if (is_at_source_end(source, iterator))
+			return;
+	}
+}
+
 inline int get_spaces(const std::string& source, size_t& iterator)
 {
 	int spaces = 0;
@@ -900,8 +915,8 @@ enum class directive_type
 struct directive
 {
 	directive_type type;
-	std::string payload;
-	directive(directive_type _type, std::string _payload)
+	std::vector<std::string> payload;
+	directive(directive_type _type, std::vector<std::string> _payload)
 		: type(std::move(_type)), payload(std::move(_payload)) {};
 };
 
@@ -974,7 +989,8 @@ struct domain_parsing_state
 
 	std::vector<std::string> errors;
 
-	bool expose_closure = false;
+	bool expose_scope = false;
+	bool dump_properties_depedencies_scope = false;
 };
 
 using directive_handle =
@@ -1018,17 +1034,19 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 	while (true)
 	{
 		std::string error;
+		bool whitespaces_only = true;
 
-		line_counter++;
+		get_to_char_while_counting_lines('<', domain_source, iterator, line_counter, whitespaces_only);
 
-		get_to_char('<', domain_source, iterator);
-
-		if (last_position != iterator)
+		if (last_position != iterator && !whitespaces_only)
 		{
+			if (state.dump_properties_depedencies_scope || state.expose_scope) 
+				goto _parse_domain_handle_error;
+
 			state.domain->directives.push_back(
 				{
 					directive_type::dump_block,
-					std::move(domain_source.substr(last_position, iterator - last_position))
+					{ std::move(domain_source.substr(last_position, iterator - last_position)) }
 				}
 			);
 		}
@@ -1037,16 +1055,16 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 			break;
 
 		iterator++;
-		auto directive = get_string_ref(source, iterator, error);
-
-		if (error.size() != 0) goto _parse_domain_handle_error;
 
 		{
+		auto directive = get_string_ref(source, iterator, error);
+		if (error.size() != 0) goto _parse_domain_handle_error;
+
 		auto handle = directives_handles_map.find(directive);
 		if (handle == directives_handles_map.end())
 		{
 			error = "No such directive: " + std::string(directive);
-			get_to_char('>', domain_source, iterator);
+			get_to_char_while_counting_lines('>', domain_source, iterator, line_counter, whitespaces_only);
 			goto _parse_domain_handle_error;
 		}
 		else
@@ -1062,7 +1080,7 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 			}
 		}
 
-		get_to_char('>', domain_source, iterator);
+		get_to_char_while_counting_lines('>', domain_source, iterator, line_counter, whitespaces_only);
 		iterator++;
 
 		last_position = iterator;
@@ -1512,10 +1530,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		switch (directive.type)
 		{
 		case directive_type::dump_block:
-			returned_value.sources.back() += directive.payload;
+			returned_value.sources.back() += directive.payload.at(0);
 			break;
 		case directive_type::dump_insertion:
-			returned_value.sources.back() += context_impl.domain_insertions.at(directive.payload);
+			returned_value.sources.back() += context_impl.domain_insertions.at(directive.payload.at(0));
 			break;
 		case directive_type::split:
 			returned_value.sources.push_back("");
@@ -1523,7 +1541,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		case directive_type::dump_property:
 		{
 			returned_value.sources.back() += translator->_expression_translator(
-				state.properties.at(directive.payload).definition,
+				state.properties.at(directive.payload.at(0)).definition,
 				state
 			);
 			break;
@@ -2630,19 +2648,21 @@ void instantiate_function(
 
 void domain_directives_handles::expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(state.expose_closure == true, "Cannot use this directive here");
-	state.expose_closure = true;
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	state.expose_scope = true;
 }
 
 void domain_directives_handles::end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(state.expose_closure == false, "Cannot use this directive here");
-	state.expose_closure = false;
+	throw_error(!state.expose_scope && !state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	state.expose_scope = false;
+	state.dump_properties_depedencies_scope = false;
 }
 
 void domain_directives_handles::property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure)
+	if (state.expose_scope)
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
@@ -2657,6 +2677,17 @@ void domain_directives_handles::property(const std::string& source, context_publ
 
 		state.domain->properties.insert({ name, type });
 	}
+	else if (state.dump_properties_depedencies_scope)
+	{
+		get_spaces(source, state.iterator);
+		auto name = get_string_ref(source, state.iterator, error);
+		rethrow_error();
+
+		auto itr = state.domain->properties.find(name);
+		throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(name));
+
+		state.domain->directives.back().payload.push_back(name);
+	}
 	else
 	{
 		get_spaces(source, state.iterator);
@@ -2667,14 +2698,16 @@ void domain_directives_handles::property(const std::string& source, context_publ
 		throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(name));
 
 		state.domain->directives.push_back(
-			{ directive_type::dump_property, std::move(name) }
+			{ directive_type::dump_property, { std::move(name) } }
 		);
 	}
 }
 
 void domain_directives_handles::symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure)
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
+	if (state.expose_scope)
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
@@ -2709,21 +2742,30 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 
 void domain_directives_handles::dump(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
 	get_spaces(source, state.iterator);
 	auto dump_type = get_string_ref(source, state.iterator, error);
 	rethrow_error();
 
 	if (dump_type == "variables")
+	{
 		state.domain->directives.push_back({ directive_type::dump_variables, {} });
+		state.dump_properties_depedencies_scope = true;
+	}
 	else if (dump_type == "functions")
+	{
 		state.domain->directives.push_back({ directive_type::dump_functions, {} });
+		state.dump_properties_depedencies_scope = true;
+	}
 	else if (dump_type == "insertion")
 	{
 		get_spaces(source, state.iterator);
 		auto insertion = get_string_ref(source, state.iterator, error);
 		rethrow_error();
 		throw_error(context.domain_insertions.find(insertion) == context.domain_insertions.end(), "No such insertion: " + std::string(insertion));
-		state.domain->directives.push_back({ directive_type::dump_insertion, insertion });
+		state.domain->directives.push_back({ directive_type::dump_insertion, { insertion } });
 	}
 	else
 		error = "Invalid dump type: " + std::string(dump_type);
@@ -2733,6 +2775,9 @@ void domain_directives_handles::dump(const std::string& source, context_public_i
 
 void domain_directives_handles::split(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
 	state.domain->directives.push_back(
 		{ directive_type::split, {} }
 	);
