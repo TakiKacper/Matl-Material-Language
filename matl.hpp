@@ -1632,7 +1632,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 			for (auto& prop : directive.payload)
 			{
-				const auto& prop_exp = state.properties.at(directive.payload.at(0)).definition;
+				const auto& prop_exp = state.properties.at(prop).definition;
 				get_used_variables_recursive(prop_exp, to_dump);
 			}
 
