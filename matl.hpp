@@ -4,7 +4,6 @@
 //In order to implement parser in this translation unit
 
 #include <string>
-#include <vector>
 #include <list>
 
 #pragma region API declaration
@@ -16,21 +15,21 @@ namespace matl
 	struct parsed_material
 	{
 		bool success = false;
-		std::vector<std::string> sources;
-		std::vector<std::string> errors;
+		std::list<std::string> sources;
+		std::list<std::string> errors;
 	};
 
 	struct domain_parsing_raport
 	{
 		bool success = false;
-		std::vector<std::string> errors;
+		std::list<std::string> errors;
 	};
 
 	struct library_parsing_raport
 	{
 		std::string library_name;
 		bool success = false;
-		std::vector<std::string> errors;
+		std::list<std::string> errors;
 	};
 
 	using custom_using_case_callback = void(std::string args, std::string& error);
@@ -70,7 +69,6 @@ private:
 
 #pragma endregion API declaration
 
-
 #ifdef MATL_IMPLEMENTATION
 
 #define MATL_IMPLEMENTATION_INCLUDED
@@ -80,8 +78,8 @@ const std::string language_version = "0.1";
 #define rethrow_error() if (error != "") return
 #define throw_error(condition, _error) if (condition) { error = _error; return; }
 
-#include <list>
 #include <unordered_map>
+#include <vector>
 
 #pragma region String Ref
 
@@ -289,6 +287,59 @@ struct hgm_pointer_solver
 
 #pragma endregion
 
+#pragma region Unsorted Set
+
+//set of elements; in case of pushing element that is actually in the set it increase assigne 
+template<class _type>
+class counting_set
+{
+	using element_with_counter = std::pair<_type, uint32_t>;
+	std::vector<element_with_counter> elements;
+	using iterator			= typename std::vector<element_with_counter>::iterator;
+	using reverse_iterator	= typename std::vector<element_with_counter>::reverse_iterator;
+
+public:
+	inline uint32_t insert(_type element)
+	{
+		auto itr = elements.begin();
+
+		while (itr != elements.end())
+		{
+			if (itr->first == element) break;
+			itr++;
+		}
+
+		if (itr == elements.end())
+		{
+			elements.push_back({ element, 1 });
+			return 1;
+		}
+
+		(*itr).second++;
+		return (*itr).second;
+	}		
+
+	inline iterator begin()
+	{
+		return elements.begin();
+	}
+
+	inline iterator end()
+	{
+		return elements.end();
+	}
+
+	inline reverse_iterator rbegin()
+	{
+		return elements.rbegin();
+	}
+
+	inline reverse_iterator rend()
+	{
+		return elements.rend();
+	}
+};
+
 #pragma region String traversion
 
 inline bool is_digit(const char& c)
@@ -332,6 +383,21 @@ inline void get_to_char(char target, const std::string& source, size_t& iterator
 {
 	while (source.at(iterator) != target)
 	{
+		iterator++;
+		if (is_at_source_end(source, iterator))
+			return;
+	}
+}
+
+inline void get_to_char_while_counting_lines(char target, const std::string& source, size_t& iterator, int& line_counter, bool& whitespaces_only)
+{
+	whitespaces_only = true;
+
+	while (source.at(iterator) != target)
+	{
+		if (source.at(iterator) == '\n') line_counter++;
+		else if (!is_whitespace(source.at(iterator))) whitespaces_only = false;
+
 		iterator++;
 		if (is_at_source_end(source, iterator))
 			return;
@@ -500,30 +566,55 @@ struct binary_operator::valid_types_set
 		returned_type(get_data_type(_returned_type)) {};
 };
 
+using named_variable = std::pair<std::string, variable_definition>;
+using named_function = std::pair<std::string, function_definition>;
+
+struct used_function_instance_info
+{
+	string_ref function_name;
+	function_definition* func_def;
+
+	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
+		function_name(_function_name), func_def(_func_def) {};
+};
+
+struct function_instance;
+using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
+
 struct expression
 {
 	struct node;
 
-	struct literal_expression
+	struct single_expression
 	{
 		std::list<node*> nodes;
-		literal_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
-		~literal_expression();
+		single_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
+		~single_expression();
 	};
 
 	struct equation
 	{
-		literal_expression* condition;
-		literal_expression* value;
-		equation(literal_expression* _condition, literal_expression* _value) :
+		single_expression* condition;
+		single_expression* value;
+		equation(single_expression* _condition, single_expression* _value) :
 			condition(_condition), value(_value) {};
 		~equation() { delete condition; delete value; };
 	};
 
 	std::list<equation*> equations;
 
-	expression(std::list<equation*>& _equations)
-		: equations(std::move(_equations)) {};
+	std::vector<named_variable*> used_variables;
+	used_functions_instances used_functions;
+
+	expression(
+		std::list<equation*>& _equations, 
+		std::vector<named_variable*>& _used_variables,
+		used_functions_instances& _used_functions
+	) : 
+		equations(std::move(_equations)), 
+		used_variables(std::move(_used_variables)), 
+		used_functions(std::move(_used_functions))
+	{};
 
 	~expression() { for (auto& eq : equations) delete eq; };
 };
@@ -561,7 +652,7 @@ struct expression::node
 	} value;
 };
 
-expression::literal_expression::~literal_expression()
+expression::single_expression::~single_expression()
 {
 	for (auto& node : nodes) 
 		delete node;
@@ -600,11 +691,11 @@ struct function_definition
 
 	std::vector<std::string> arguments;
 	variables_collection variables;
-	expression* result;
+	expression* returned_value;
 
 	std::list<function_instance> instances;
 
-	~function_definition() { delete result; };
+	~function_definition() { delete returned_value; };
 };
 using function_collection = heterogeneous_map<std::string, function_definition, hgm_string_solver>;
 
@@ -828,6 +919,9 @@ inline const binary_operator* const get_binary_operator(const string_ref& symbol
 
 #pragma region Translators
 
+//variable and it's equation translated
+using inlined_variables = std::unordered_map<const named_variable*, std::string>;
+
 struct translator;
 struct material_parsing_state;
 
@@ -839,6 +933,7 @@ struct translator
 {
 	using expressions_translator = std::string(*)(
 		const expression* const& exp,
+		const inlined_variables* inlined,
 		const material_parsing_state& state
 		);
 	const expressions_translator _expression_translator;
@@ -846,6 +941,7 @@ struct translator
 	using variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
+		const inlined_variables* inlined,
 		const material_parsing_state& state
 		);
 	const variables_declarations_translator _variable_declaration_translator;
@@ -887,8 +983,8 @@ enum class directive_type
 struct directive
 {
 	directive_type type;
-	std::string payload;
-	directive(directive_type _type, std::string _payload)
+	std::vector<std::string> payload;
+	directive(directive_type _type, std::vector<std::string> _payload)
 		: type(std::move(_type)), payload(std::move(_payload)) {};
 };
 
@@ -959,9 +1055,10 @@ struct domain_parsing_state
 	size_t iterator = 0;
 	parsed_domain* domain;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 
-	bool expose_closure = false;
+	bool expose_scope = false;
+	bool dump_properties_depedencies_scope = false;
 };
 
 using directive_handle =
@@ -1005,17 +1102,19 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 	while (true)
 	{
 		std::string error;
+		bool whitespaces_only = true;
 
-		line_counter++;
+		get_to_char_while_counting_lines('<', domain_source, iterator, line_counter, whitespaces_only);
 
-		get_to_char('<', domain_source, iterator);
-
-		if (last_position != iterator)
+		if (last_position != iterator && !whitespaces_only)
 		{
+			if (state.dump_properties_depedencies_scope || state.expose_scope) 
+				goto _parse_domain_handle_error;
+
 			state.domain->directives.push_back(
 				{
 					directive_type::dump_block,
-					std::move(domain_source.substr(last_position, iterator - last_position))
+					{ std::move(domain_source.substr(last_position, iterator - last_position)) }
 				}
 			);
 		}
@@ -1024,16 +1123,16 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 			break;
 
 		iterator++;
-		auto directive = get_string_ref(source, iterator, error);
-
-		if (error.size() != 0) goto _parse_domain_handle_error;
 
 		{
+		auto directive = get_string_ref(source, iterator, error);
+		if (error.size() != 0) goto _parse_domain_handle_error;
+
 		auto handle = directives_handles_map.find(directive);
 		if (handle == directives_handles_map.end())
 		{
 			error = "No such directive: " + std::string(directive);
-			get_to_char('>', domain_source, iterator);
+			get_to_char_while_counting_lines('>', domain_source, iterator, line_counter, whitespaces_only);
 			goto _parse_domain_handle_error;
 		}
 		else
@@ -1049,7 +1148,7 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 			}
 		}
 
-		get_to_char('>', domain_source, iterator);
+		get_to_char_while_counting_lines('>', domain_source, iterator, line_counter, whitespaces_only);
 		iterator++;
 
 		last_position = iterator;
@@ -1125,7 +1224,7 @@ struct library_parsing_state
 	int this_line_indentation_spaces = 0;
 	bool function_body = false;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 	parsed_libraries_stack* parsed_libs_stack = nullptr;
 	std::list<matl::library_parsing_raport>* parsing_raports;
 
@@ -1318,16 +1417,6 @@ std::list<matl::library_parsing_raport> matl::parse_library(const std::string li
 
 #pragma region Material parsing
 
-struct used_function_instance_info
-{
-	string_ref function_name;
-	function_definition* func_def;
-
-	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
-		function_name(_function_name), func_def(_func_def) {};
-};
-using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
-
 struct material_parsing_state
 {
 	size_t iterator = 0;
@@ -1336,14 +1425,12 @@ struct material_parsing_state
 
 	bool function_body = false;
 
-	std::vector<std::string> errors;
+	std::list<std::string> errors;
 
 	variables_collection variables;
 	function_collection functions;
 	libraries_collection libraries;
 	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
-
-	used_functions_instances ever_used_functions;
 
 	const parsed_domain* domain = nullptr;
 };
@@ -1375,14 +1462,34 @@ heterogeneous_map<std::string, keyword_handle, hgm_string_solver> keywords_handl
 	}
 };
 
+//recursively get all variables used by expression, used by dump variables
+void get_used_variables_recursive(const expression* exp, counting_set<named_variable*>& to_dump)
+{
+	for (auto& var : exp->used_variables)
+	{
+		if (to_dump.insert(var) == 1)
+			get_used_variables_recursive(var->second.definition, to_dump);
+	}	
+}
+
+//same but for functions
+void get_used_functions_recursive(expression* exp, counting_set<std::pair<function_instance*, used_function_instance_info>*>& to_dump)
+{
+	for (auto& func : exp->used_functions)
+		to_dump.insert(&func);
+
+	for (auto& func : exp->used_variables)
+		get_used_functions_recursive(func->second.definition, to_dump);
+}
+
 matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
 {
 	if (context == nullptr)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = { "[0] Cannot parse material without context" };
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = { "[0] Cannot parse material without context" };
+		return returned_value;
 	}
 
 	material_parsing_state state;
@@ -1471,26 +1578,32 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	if (state.errors.size() != 0)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = std::move(state.errors);
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = std::move(state.errors);
+		return returned_value;
 	}
 
 	if (state.domain == nullptr)
 	{
-		parsed_material result;
-		result.success = false;
-		result.errors = { "[0] Material does not specify the domain" };
-		return result;
+		parsed_material returned_value;
+		returned_value.success = false;
+		returned_value.errors = { "[0] Material does not specify the domain" };
+		return returned_value;
 	}
 
-	parsed_material result;
-	result.sources = { "" };
+	parsed_material returned_value;
+	returned_value.sources = { "" };
+
+	constexpr auto preallocated_shader_memory = 5 * 1024;
+
+	returned_value.sources.back().reserve(preallocated_shader_memory);
 
 	auto& translator = context->impl->impl.translator;
 
 	std::string invalid_insertion;
+
+	inlined_variables inlined;
 
 	for (auto& directive : state.domain->directives)
 	{
@@ -1499,42 +1612,75 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		switch (directive.type)
 		{
 		case directive_type::dump_block:
-			result.sources.back() += directive.payload;
+			returned_value.sources.back() += directive.payload.at(0);
 			break;
 		case directive_type::dump_insertion:
-			result.sources.back() += context_impl.domain_insertions.at(directive.payload);
+			returned_value.sources.back() += context_impl.domain_insertions.at(directive.payload.at(0));
 			break;
 		case directive_type::split:
-			result.sources.push_back("");
+			returned_value.sources.push_back("");
+			returned_value.sources.back().reserve(preallocated_shader_memory);
 			break;
 		case directive_type::dump_property:
 		{
-			result.sources.back() += translator->_expression_translator(
-				state.properties.at(directive.payload).definition,
+			returned_value.sources.back() += translator->_expression_translator(
+				state.properties.at(directive.payload.at(0)).definition,
+				&inlined,
 				state
 			);
 			break;
 		}
 		case directive_type::dump_variables:
-			for (auto& var : state.variables)
-				result.sources.back() += translator->_variable_declaration_translator(
-					var.first,
-					&var.second,
-					state
-				);
+		{
+			counting_set<named_variable*> to_dump;
+
+			for (auto& prop : directive.payload)
+			{
+				const auto& prop_exp = state.properties.at(prop).definition;
+				get_used_variables_recursive(prop_exp, to_dump);
+			}
+
+			for (auto itr = to_dump.rbegin(); itr != to_dump.rend(); itr++)
+			{
+				if (itr->second > 1)
+					returned_value.sources.back() += translator->_variable_declaration_translator(
+						itr->first->first,
+						&itr->first->second,
+						&inlined,
+						state
+					);
+				else
+					inlined.insert({
+						itr->first, 
+						"(" + translator->_expression_translator(itr->first->second.definition, &inlined, state) + ")"
+					});
+			}
+
 			break;
+		}
 		case directive_type::dump_functions:
-			for (auto itr = state.ever_used_functions.begin(); itr != state.ever_used_functions.end(); itr++)
-				result.sources.back() += translator->_functions_translator(
-					itr->first,
-					&itr->second,
+		{
+			counting_set<std::pair<function_instance*, used_function_instance_info>*> to_dump;
+
+			for (auto& prop : directive.payload)
+			{
+				const auto& prop_exp = state.properties.at(prop).definition;
+				get_used_functions_recursive(prop_exp, to_dump);
+			}
+
+			for (auto itr = to_dump.begin(); itr != to_dump.end(); itr++)
+				returned_value.sources.back() += translator->_functions_translator(
+					itr->first->first,
+					&itr->first->second,
 					state
 				);
+
 			break;
+		}
 		}
 	}
 
-	return result;
+	return returned_value;
 }
 
 #pragma endregion
@@ -1602,7 +1748,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
+	decltype(expression::used_functions)& used_functions,
 	std::string& error
 );
 
@@ -1635,14 +1781,16 @@ namespace expressions_parsing_utilities
 		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
+		std::vector<named_variable*>& used_variables,
+		used_functions_instances& used_functions,
 		std::string& error
 	);
 	void validate_node(
+		expression* exp,
 		expression::node* n,
 		const parsed_domain* domain,
 		std::vector<const data_type*>& types,
 		const function_collection* functions,
-		used_functions_instances* used_func_instances,
 		std::string& error
 	);
 }
@@ -1813,6 +1961,7 @@ void expressions_parsing_utilities::insert_operator(
 		if (
 			previous->type != expression::node::node_type::single_arg_left_parenthesis &&
 			previous->type != expression::node::node_type::vector_contructor_operator &&
+			previous->type != expression::node::node_type::function &&
 			get_precedence(previous) >= get_precedence(node)
 			)
 		{
@@ -1839,6 +1988,8 @@ void expressions_parsing_utilities::shunting_yard(
 	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
+	std::vector<named_variable*>& used_variables,
+	used_functions_instances& used_functions,
 	std::string& error
 )
 {
@@ -1990,7 +2141,7 @@ _shunting_yard_loop:
 			if (if_used)
 			{
 				finish_expression();
-				equations.back()->value = new expression::literal_expression(output);
+				equations.back()->value = new expression::single_expression(output);
 			}
 
 			if_used = true;
@@ -2003,7 +2154,7 @@ _shunting_yard_loop:
 			throw_error(else_used, "Cannot specify two else cases");
 
 			finish_expression();
-			equations.back()->value = new expression::literal_expression(output);
+			equations.back()->value = new expression::single_expression(output);
 
 			else_used = true;
 			accepts_right_unary_operator = true;
@@ -2019,7 +2170,7 @@ _shunting_yard_loop:
 			if (!else_used)
 			{
 				equations.push_back(new expression::equation{
-					new expression::literal_expression(output),
+					new expression::single_expression(output),
 					nullptr
 				});
 			}
@@ -2135,7 +2286,7 @@ _shunting_yard_loop:
 			else
 			{
 				get_spaces(source, iterator);
-				if (get_char(source, iterator) != ')')
+				if (source.at(iterator) != ')')
 					args_ammount = 1;
 			}
 
@@ -2165,7 +2316,7 @@ _shunting_yard_loop:
 			new_node->type = node_type::function;
 			new_node->value.function = &(*itr);
 
-			throw_error(new_node->value.function->second.result == nullptr,
+			throw_error(new_node->value.function->second.returned_value == nullptr,
 				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 			);
 
@@ -2185,6 +2336,8 @@ _shunting_yard_loop:
 
 				new_node->value.variable = &(*itr);
 				output.push_back(new_node);
+
+				used_variables.push_back(&(*itr));
 
 				continue;
 			}
@@ -2236,20 +2389,20 @@ _shunting_yard_end:
 	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
 	if (equations.size() != 0)
-		equations.back()->value = new expression::literal_expression(output);
+		equations.back()->value = new expression::single_expression(output);
 	else
 		equations.push_back(new expression::equation{
 			nullptr,
-			new expression::literal_expression(output)
+			new expression::single_expression(output)
 		});
 }
 
 inline void expressions_parsing_utilities::validate_node(
+	expression* exp,
 	expression::node* n,
 	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2395,7 +2548,7 @@ inline void expressions_parsing_utilities::validate_node(
 				pop_types(func_def.arguments.size());
 				types.push_back(func_instance.returned_type);
 
-				used_func_instances->insert({ &func_instance, { func_name, &func_def } });
+				exp->used_functions.insert({ &func_instance, { func_name, &func_def } });
 
 				return;
 			}
@@ -2405,11 +2558,11 @@ inline void expressions_parsing_utilities::validate_node(
 			func_def,
 			arguments_types,
 			functions,
-			used_func_instances,
+			exp->used_functions,
 			error
 		);
 
-		used_func_instances->insert({ &func_def.instances.back(), { func_name, &func_def } });
+		exp->used_functions.insert({ &func_def.instances.back(), { func_name, &func_def } });
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
@@ -2445,6 +2598,9 @@ expression* get_expression(
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
+	std::vector<named_variable*> used_vars;
+	used_functions_instances used_funcs;
+
 	expressions_parsing_utilities::shunting_yard(
 		source, 
 		iterator, 
@@ -2459,6 +2615,8 @@ expression* get_expression(
 		equations,
 		output,
 		operators,
+		used_vars,
+		used_funcs,
 		error
 	);
 
@@ -2475,14 +2633,13 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	return new expression(equations);
+	return new expression(equations, used_vars, used_funcs);
 }
 
 const data_type* validate_expression(
-	const expression* exp,
+	expression* exp,
 	const parsed_domain* domain,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2491,11 +2648,11 @@ const data_type* validate_expression(
 
 	std::vector<const data_type*> types;
 
-	auto validate_literal_expression = [&](const expression::literal_expression* le) -> const data_type*
+	auto validate_literal_expression = [&](const expression::single_expression* le) -> const data_type*
 	{
 		for (auto& n : le->nodes)
 		{
-			expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
+			expressions_parsing_utilities::validate_node(exp, n, domain, types, functions, error);
 			if (error != "") break;
 		}
 
@@ -2548,7 +2705,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
+	decltype(expression::used_functions)& used_functions,
 	std::string& error
 )
 {
@@ -2567,7 +2724,7 @@ void instantiate_function(
 
 		std::string error2;
 
-		auto type = validate_expression(var.definition, nullptr, functions, used_func_instances, error2);
+		auto type = validate_expression(var.definition, nullptr, functions, error2);
 		var.return_type = type;
 
 		variables_types.push_back(var.return_type);
@@ -2581,11 +2738,17 @@ void instantiate_function(
 			error += error2;
 		}
 
+		for (auto& func : var.definition->used_functions)
+			used_functions.insert(func);
+
 		itr++;
 	}
 
 	std::string error2;
-	auto return_type = validate_expression(func_def.result, nullptr, functions, used_func_instances, error2);
+	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, error2);
+
+	for (auto& func : func_def.returned_value->used_functions)
+		used_functions.insert(func);
 
 	func_def.instances.push_back({});
 	auto& instance = func_def.instances.back();
@@ -2605,19 +2768,21 @@ void instantiate_function(
 
 void domain_directives_handles::expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(state.expose_closure == true, "Cannot use this directive here");
-	state.expose_closure = true;
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	state.expose_scope = true;
 }
 
 void domain_directives_handles::end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(state.expose_closure == false, "Cannot use this directive here");
-	state.expose_closure = false;
+	throw_error(!state.expose_scope && !state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	state.expose_scope = false;
+	state.dump_properties_depedencies_scope = false;
 }
 
 void domain_directives_handles::property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure)
+	if (state.expose_scope)
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
@@ -2632,6 +2797,17 @@ void domain_directives_handles::property(const std::string& source, context_publ
 
 		state.domain->properties.insert({ name, type });
 	}
+	else if (state.dump_properties_depedencies_scope)
+	{
+		get_spaces(source, state.iterator);
+		auto name = get_string_ref(source, state.iterator, error);
+		rethrow_error();
+
+		auto itr = state.domain->properties.find(name);
+		throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(name));
+
+		state.domain->directives.back().payload.push_back(name);
+	}
 	else
 	{
 		get_spaces(source, state.iterator);
@@ -2642,14 +2818,16 @@ void domain_directives_handles::property(const std::string& source, context_publ
 		throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(name));
 
 		state.domain->directives.push_back(
-			{ directive_type::dump_property, std::move(name) }
+			{ directive_type::dump_property, { std::move(name) } }
 		);
 	}
 }
 
 void domain_directives_handles::symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	if (state.expose_closure)
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
+	if (state.expose_scope)
 	{
 		get_spaces(source, state.iterator);
 		auto type_name = get_string_ref(source, state.iterator, error);
@@ -2684,21 +2862,30 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 
 void domain_directives_handles::dump(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
 	get_spaces(source, state.iterator);
 	auto dump_type = get_string_ref(source, state.iterator, error);
 	rethrow_error();
 
 	if (dump_type == "variables")
+	{
 		state.domain->directives.push_back({ directive_type::dump_variables, {} });
+		state.dump_properties_depedencies_scope = true;
+	}
 	else if (dump_type == "functions")
+	{
 		state.domain->directives.push_back({ directive_type::dump_functions, {} });
+		state.dump_properties_depedencies_scope = true;
+	}
 	else if (dump_type == "insertion")
 	{
 		get_spaces(source, state.iterator);
 		auto insertion = get_string_ref(source, state.iterator, error);
 		rethrow_error();
 		throw_error(context.domain_insertions.find(insertion) == context.domain_insertions.end(), "No such insertion: " + std::string(insertion));
-		state.domain->directives.push_back({ directive_type::dump_insertion, insertion });
+		state.domain->directives.push_back({ directive_type::dump_insertion, { insertion } });
 	}
 	else
 		error = "Invalid dump type: " + std::string(dump_type);
@@ -2708,6 +2895,9 @@ void domain_directives_handles::dump(const std::string& source, context_public_i
 
 void domain_directives_handles::split(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
+	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+
 	state.domain->directives.push_back(
 		{ directive_type::split, {} }
 	);
@@ -2770,7 +2960,7 @@ void material_keywords_handles::let
 			error
 		);
 		rethrow_error();
-		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, &state.ever_used_functions, error);
+		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
 		rethrow_error();
 	}
 	else
@@ -2836,7 +3026,7 @@ void material_keywords_handles::property
 	);
 	rethrow_error();
 
-	auto type = validate_expression(prop.definition, state.domain, &state.functions, &state.ever_used_functions, error);
+	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
 	rethrow_error();
 
 	if (itr->second != type)
@@ -2895,6 +3085,7 @@ void material_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+	rethrow_error();
 
 	auto& name = state.functions.recent().first;
 	throw_error(state.variables.find(name) != state.variables.end(),
@@ -3022,6 +3213,8 @@ void library_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, library_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+	rethrow_error();
+
 	state.functions.recent().second.library_name = state.library_name;
 }
 
@@ -3099,7 +3292,7 @@ void handles_common::_return(const std::string& source, context_public_implement
 
 	state.function_body = false;
 
-	func_def.result = get_expression(
+	func_def.returned_value = get_expression(
 		source,
 		iterator,
 		state.this_line_indentation_spaces,
