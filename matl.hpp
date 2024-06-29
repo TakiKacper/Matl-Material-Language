@@ -69,7 +69,6 @@ private:
 
 #pragma endregion API declaration
 
-
 #ifdef MATL_IMPLEMENTATION
 
 #define MATL_IMPLEMENTATION_INCLUDED
@@ -570,6 +569,18 @@ struct binary_operator::valid_types_set
 using named_variable = std::pair<std::string, variable_definition>;
 using named_function = std::pair<std::string, function_definition>;
 
+struct used_function_instance_info
+{
+	string_ref function_name;
+	function_definition* func_def;
+
+	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
+		function_name(_function_name), func_def(_func_def) {};
+};
+
+struct function_instance;
+using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
+
 struct expression
 {
 	struct node;
@@ -593,12 +604,12 @@ struct expression
 	std::list<equation*> equations;
 
 	std::vector<named_variable*> used_variables;
-	std::vector<named_function*> used_functions;
+	used_functions_instances used_functions;
 
 	expression(
 		std::list<equation*>& _equations, 
 		std::vector<named_variable*>& _used_variables,
-		std::vector<named_function*>& _used_functions
+		used_functions_instances& _used_functions
 	) : 
 		equations(std::move(_equations)), 
 		used_variables(std::move(_used_variables)), 
@@ -1406,16 +1417,6 @@ std::list<matl::library_parsing_raport> matl::parse_library(const std::string li
 
 #pragma region Material parsing
 
-struct used_function_instance_info
-{
-	string_ref function_name;
-	function_definition* func_def;
-
-	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
-		function_name(_function_name), func_def(_func_def) {};
-};
-using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
-
 struct material_parsing_state
 {
 	size_t iterator = 0;
@@ -1430,8 +1431,6 @@ struct material_parsing_state
 	function_collection functions;
 	libraries_collection libraries;
 	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
-
-	used_functions_instances ever_used_functions;
 
 	const parsed_domain* domain = nullptr;
 };
@@ -1474,10 +1473,10 @@ void get_used_variables_recursive(const expression* exp, counting_set<named_vari
 }
 
 //same but for functions
-void get_used_functions_recursive(const expression* exp, counting_set<named_function*>& to_dump)
+void get_used_functions_recursive(expression* exp, counting_set<std::pair<function_instance*, used_function_instance_info>*>& to_dump)
 {
 	for (auto& func : exp->used_functions)
-		to_dump.insert(func);
+		to_dump.insert(&func);
 
 	for (auto& func : exp->used_variables)
 		get_used_functions_recursive(func->second.definition, to_dump);
@@ -1656,12 +1655,21 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 		case directive_type::dump_functions:
 		{
-			for (auto itr = state.ever_used_functions.begin(); itr != state.ever_used_functions.end(); itr++)
+			counting_set<std::pair<function_instance*, used_function_instance_info>*> to_dump;
+
+			for (auto& prop : directive.payload)
+			{
+				const auto& prop_exp = state.properties.at(prop).definition;
+				get_used_functions_recursive(prop_exp, to_dump);
+			}
+
+			for (auto itr = to_dump.begin(); itr != to_dump.end(); itr++)
 				returned_value.sources.back() += translator->_functions_translator(
-					itr->first,
-					&itr->second,
+					itr->first->first,
+					&itr->first->second,
 					state
 				);
+
 			break;
 		}
 		}
@@ -1735,7 +1743,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
+	decltype(expression::used_functions)& used_functions,
 	std::string& error
 );
 
@@ -1769,15 +1777,15 @@ namespace expressions_parsing_utilities
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::vector<named_variable*>& used_variables,
-		std::vector<named_function*>& used_functions,
+		used_functions_instances& used_functions,
 		std::string& error
 	);
 	void validate_node(
+		expression* exp,
 		expression::node* n,
 		const parsed_domain* domain,
 		std::vector<const data_type*>& types,
 		const function_collection* functions,
-		used_functions_instances* used_func_instances,
 		std::string& error
 	);
 }
@@ -1975,7 +1983,7 @@ void expressions_parsing_utilities::shunting_yard(
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
 	std::vector<named_variable*>& used_variables,
-	std::vector<named_function*>& used_functions,
+	used_functions_instances& used_functions,
 	std::string& error
 )
 {
@@ -2301,7 +2309,6 @@ _shunting_yard_loop:
 
 			new_node->type = node_type::function;
 			new_node->value.function = &(*itr);
-			used_functions.push_back(&(*itr));
 
 			throw_error(new_node->value.function->second.returned_value == nullptr,
 				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
@@ -2385,11 +2392,11 @@ _shunting_yard_end:
 }
 
 inline void expressions_parsing_utilities::validate_node(
+	expression* exp,
 	expression::node* n,
 	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2535,7 +2542,7 @@ inline void expressions_parsing_utilities::validate_node(
 				pop_types(func_def.arguments.size());
 				types.push_back(func_instance.returned_type);
 
-				used_func_instances->insert({ &func_instance, { func_name, &func_def } });
+				exp->used_functions.insert({ &func_instance, { func_name, &func_def } });
 
 				return;
 			}
@@ -2545,11 +2552,11 @@ inline void expressions_parsing_utilities::validate_node(
 			func_def,
 			arguments_types,
 			functions,
-			used_func_instances,
+			exp->used_functions,
 			error
 		);
 
-		used_func_instances->insert({ &func_def.instances.back(), { func_name, &func_def } });
+		exp->used_functions.insert({ &func_def.instances.back(), { func_name, &func_def } });
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
@@ -2586,7 +2593,7 @@ expression* get_expression(
 	std::list<expression::node*> operators;
 
 	std::vector<named_variable*> used_vars;
-	std::vector<named_function*> used_funcs;
+	used_functions_instances used_funcs;
 
 	expressions_parsing_utilities::shunting_yard(
 		source, 
@@ -2624,10 +2631,9 @@ expression* get_expression(
 }
 
 const data_type* validate_expression(
-	const expression* exp,
+	expression* exp,
 	const parsed_domain* domain,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
 	std::string& error
 )
 {
@@ -2640,7 +2646,7 @@ const data_type* validate_expression(
 	{
 		for (auto& n : le->nodes)
 		{
-			expressions_parsing_utilities::validate_node(n, domain, types, functions, used_func_instances, error);
+			expressions_parsing_utilities::validate_node(exp, n, domain, types, functions, error);
 			if (error != "") break;
 		}
 
@@ -2693,7 +2699,7 @@ void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
 	const function_collection* functions,
-	used_functions_instances* used_func_instances,
+	decltype(expression::used_functions)& used_functions,
 	std::string& error
 )
 {
@@ -2712,7 +2718,7 @@ void instantiate_function(
 
 		std::string error2;
 
-		auto type = validate_expression(var.definition, nullptr, functions, used_func_instances, error2);
+		auto type = validate_expression(var.definition, nullptr, functions, error2);
 		var.return_type = type;
 
 		variables_types.push_back(var.return_type);
@@ -2726,11 +2732,14 @@ void instantiate_function(
 			error += error2;
 		}
 
+		for (auto& func : var.definition->used_functions)
+			used_functions.insert(func);
+
 		itr++;
 	}
 
 	std::string error2;
-	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, used_func_instances, error2);
+	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, error2);
 
 	func_def.instances.push_back({});
 	auto& instance = func_def.instances.back();
@@ -2942,7 +2951,7 @@ void material_keywords_handles::let
 			error
 		);
 		rethrow_error();
-		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, &state.ever_used_functions, error);
+		var_def.return_type = validate_expression(var_def.definition, state.domain, &state.functions, error);
 		rethrow_error();
 	}
 	else
@@ -3008,7 +3017,7 @@ void material_keywords_handles::property
 	);
 	rethrow_error();
 
-	auto type = validate_expression(prop.definition, state.domain, &state.functions, &state.ever_used_functions, error);
+	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
 	rethrow_error();
 
 	if (itr->second != type)
