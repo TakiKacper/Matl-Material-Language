@@ -290,36 +290,52 @@ struct hgm_pointer_solver
 
 #pragma region Unsorted Set
 
+//set of elements; in case of pushing element that is actually in the set it increase assigne 
 template<class _type>
-class unsorted_set
+class counting_set
 {
-	std::vector<_type> elements;
-	using iterator = typename std::vector<_type>::iterator;
-	using reverse_iterator = typename std::vector<_type>::reverse_iterator;
+	using element_with_counter = std::pair<_type, uint32_t>;
+	std::vector<element_with_counter> elements;
+	using iterator			= typename std::vector<element_with_counter>::iterator;
+	using reverse_iterator	= typename std::vector<element_with_counter>::reverse_iterator;
 
 public:
-	void insert(_type element)
+	inline uint32_t insert(_type element)
 	{
-		if (std::find(elements.begin(), elements.end(), element) == elements.end()) 
-			elements.push_back(element);
-	}
+		auto itr = elements.begin();
 
-	iterator begin()
+		while (itr != elements.end())
+		{
+			if (itr->first == element) break;
+			itr++;
+		}
+
+		if (itr == elements.end())
+		{
+			elements.push_back({ element, 1 });
+			return 1;
+		}
+
+		(*itr).second++;
+		return (*itr).second;
+	}		
+
+	inline iterator begin()
 	{
 		return elements.begin();
 	}
 
-	iterator end()
+	inline iterator end()
 	{
 		return elements.end();
 	}
 
-	reverse_iterator rbegin()
+	inline reverse_iterator rbegin()
 	{
 		return elements.rbegin();
 	}
 
-	reverse_iterator rend()
+	inline reverse_iterator rend()
 	{
 		return elements.rend();
 	}
@@ -558,18 +574,18 @@ struct expression
 {
 	struct node;
 
-	struct literal_expression
+	struct single_expression
 	{
 		std::list<node*> nodes;
-		literal_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
-		~literal_expression();
+		single_expression(std::list<node*>& _nodes) : nodes(std::move(_nodes)) {};
+		~single_expression();
 	};
 
 	struct equation
 	{
-		literal_expression* condition;
-		literal_expression* value;
-		equation(literal_expression* _condition, literal_expression* _value) :
+		single_expression* condition;
+		single_expression* value;
+		equation(single_expression* _condition, single_expression* _value) :
 			condition(_condition), value(_value) {};
 		~equation() { delete condition; delete value; };
 	};
@@ -625,7 +641,7 @@ struct expression::node
 	} value;
 };
 
-expression::literal_expression::~literal_expression()
+expression::single_expression::~single_expression()
 {
 	for (auto& node : nodes) 
 		delete node;
@@ -892,6 +908,9 @@ inline const binary_operator* const get_binary_operator(const string_ref& symbol
 
 #pragma region Translators
 
+//variable and it's equation translated
+using inlined_variables = std::unordered_map<const named_variable*, std::string>;
+
 struct translator;
 struct material_parsing_state;
 
@@ -903,6 +922,7 @@ struct translator
 {
 	using expressions_translator = std::string(*)(
 		const expression* const& exp,
+		const inlined_variables* inlined,
 		const material_parsing_state& state
 		);
 	const expressions_translator _expression_translator;
@@ -910,6 +930,7 @@ struct translator
 	using variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
+		const inlined_variables* inlined,
 		const material_parsing_state& state
 		);
 	const variables_declarations_translator _variable_declaration_translator;
@@ -1443,17 +1464,17 @@ heterogeneous_map<std::string, keyword_handle, hgm_string_solver> keywords_handl
 };
 
 //recursively get all variables used by expression, used by dump variables
-void get_used_variables_recursive(const expression* exp, unsorted_set<named_variable*>& to_dump)
+void get_used_variables_recursive(const expression* exp, counting_set<named_variable*>& to_dump)
 {
 	for (auto& var : exp->used_variables)
-		to_dump.insert(var);
-
-	for (auto& var : exp->used_variables)
-		get_used_variables_recursive(var->second.definition, to_dump);
+	{
+		if (to_dump.insert(var) == 1)
+			get_used_variables_recursive(var->second.definition, to_dump);
+	}	
 }
 
 //same but for functions
-void get_used_functions_recursive(const expression* exp, unsorted_set<named_function*>& to_dump)
+void get_used_functions_recursive(const expression* exp, counting_set<named_function*>& to_dump)
 {
 	for (auto& func : exp->used_functions)
 		to_dump.insert(func);
@@ -1461,7 +1482,6 @@ void get_used_functions_recursive(const expression* exp, unsorted_set<named_func
 	for (auto& func : exp->used_variables)
 		get_used_functions_recursive(func->second.definition, to_dump);
 }
-
 
 matl::parsed_material matl::parse_material(const std::string& material_source, matl::context* context)
 {
@@ -1580,6 +1600,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	std::string invalid_insertion;
 
+	inlined_variables inlined;
+
 	for (auto& directive : state.domain->directives)
 	{
 		using directive_type = directive_type;
@@ -1599,13 +1621,14 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		{
 			returned_value.sources.back() += translator->_expression_translator(
 				state.properties.at(directive.payload.at(0)).definition,
+				&inlined,
 				state
 			);
 			break;
 		}
 		case directive_type::dump_variables:
 		{
-			unsorted_set<named_variable*> to_dump;
+			counting_set<named_variable*> to_dump;
 
 			for (auto& prop : directive.payload)
 			{
@@ -1614,11 +1637,20 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			}
 
 			for (auto itr = to_dump.rbegin(); itr != to_dump.rend(); itr++)
-				returned_value.sources.back() += translator->_variable_declaration_translator(
-					(*itr)->first,
-					&(*itr)->second,
-					state
-				);
+			{
+				if (itr->second > 1)
+					returned_value.sources.back() += translator->_variable_declaration_translator(
+						itr->first->first,
+						&itr->first->second,
+						&inlined,
+						state
+					);
+				else
+					inlined.insert({
+						itr->first, 
+						"(" + translator->_expression_translator(itr->first->second.definition, &inlined, state) + ")"
+					});
+			}
 
 			break;
 		}
@@ -2095,7 +2127,7 @@ _shunting_yard_loop:
 			if (if_used)
 			{
 				finish_expression();
-				equations.back()->value = new expression::literal_expression(output);
+				equations.back()->value = new expression::single_expression(output);
 			}
 
 			if_used = true;
@@ -2108,7 +2140,7 @@ _shunting_yard_loop:
 			throw_error(else_used, "Cannot specify two else cases");
 
 			finish_expression();
-			equations.back()->value = new expression::literal_expression(output);
+			equations.back()->value = new expression::single_expression(output);
 
 			else_used = true;
 			accepts_right_unary_operator = true;
@@ -2124,7 +2156,7 @@ _shunting_yard_loop:
 			if (!else_used)
 			{
 				equations.push_back(new expression::equation{
-					new expression::literal_expression(output),
+					new expression::single_expression(output),
 					nullptr
 				});
 			}
@@ -2344,11 +2376,11 @@ _shunting_yard_end:
 	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
 	if (equations.size() != 0)
-		equations.back()->value = new expression::literal_expression(output);
+		equations.back()->value = new expression::single_expression(output);
 	else
 		equations.push_back(new expression::equation{
 			nullptr,
-			new expression::literal_expression(output)
+			new expression::single_expression(output)
 		});
 }
 
@@ -2604,7 +2636,7 @@ const data_type* validate_expression(
 
 	std::vector<const data_type*> types;
 
-	auto validate_literal_expression = [&](const expression::literal_expression* le) -> const data_type*
+	auto validate_literal_expression = [&](const expression::single_expression* le) -> const data_type*
 	{
 		for (auto& n : le->nodes)
 		{
