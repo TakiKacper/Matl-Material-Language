@@ -3067,6 +3067,7 @@ void material_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+	rethrow_error();
 
 	auto& name = state.functions.recent().first;
 	throw_error(state.variables.find(name) != state.variables.end(),
@@ -3194,6 +3195,8 @@ void library_keywords_handles::func
 	(const std::string& source, context_public_implementation& context, library_parsing_state& state, std::string& error)
 {
 	handles_common::func(source, context, state, error);
+	rethrow_error();
+
 	state.functions.recent().second.library_name = state.library_name;
 }
 
