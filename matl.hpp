@@ -1595,6 +1595,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	parsed_material returned_value;
 	returned_value.sources = { "" };
 
+	constexpr auto preallocated_shader_memory = 5 * 1024;
+
+	returned_value.sources.back().reserve(preallocated_shader_memory);
+
 	auto& translator = context->impl->impl.translator;
 
 	std::string invalid_insertion;
@@ -1615,6 +1619,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			break;
 		case directive_type::split:
 			returned_value.sources.push_back("");
+			returned_value.sources.back().reserve(preallocated_shader_memory);
 			break;
 		case directive_type::dump_property:
 		{
