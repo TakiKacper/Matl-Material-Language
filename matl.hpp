@@ -1956,6 +1956,7 @@ void expressions_parsing_utilities::insert_operator(
 		if (
 			previous->type != expression::node::node_type::single_arg_left_parenthesis &&
 			previous->type != expression::node::node_type::vector_contructor_operator &&
+			previous->type != expression::node::node_type::function &&
 			get_precedence(previous) >= get_precedence(node)
 			)
 		{
@@ -2280,7 +2281,7 @@ _shunting_yard_loop:
 			else
 			{
 				get_spaces(source, iterator);
-				if (get_char(source, iterator) != ')')
+				if (source.at(iterator) != ')')
 					args_ammount = 1;
 			}
 
@@ -2740,6 +2741,9 @@ void instantiate_function(
 
 	std::string error2;
 	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, error2);
+
+	for (auto& func : func_def.returned_value->used_functions)
+		used_functions.insert(func);
 
 	func_def.instances.push_back({});
 	auto& instance = func_def.instances.back();
