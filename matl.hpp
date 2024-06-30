@@ -490,6 +490,7 @@ struct binary_operator;
 
 struct variable_definition;
 struct function_definition;
+struct function_instance;
 struct symbol_definition;
 
 const data_type*	   const get_data_type			(const string_ref& name);
@@ -569,18 +570,6 @@ struct binary_operator::valid_types_set
 using named_variable = std::pair<std::string, variable_definition>;
 using named_function = std::pair<std::string, function_definition>;
 
-struct used_function_instance_info
-{
-	string_ref function_name;
-	function_definition* func_def;
-
-	used_function_instance_info(string_ref _function_name, function_definition* _func_def) :
-		function_name(_function_name), func_def(_func_def) {};
-};
-
-struct function_instance;
-using used_functions_instances = heterogeneous_map<function_instance*, used_function_instance_info, hgm_pointer_solver>;
-
 struct expression
 {
 	struct node;
@@ -604,12 +593,12 @@ struct expression
 	std::list<equation*> equations;
 
 	std::vector<named_variable*> used_variables;
-	used_functions_instances used_functions;
+	std::vector<function_instance*> used_functions;
 
 	expression(
 		std::list<equation*>& _equations, 
 		std::vector<named_variable*>& _used_variables,
-		used_functions_instances& _used_functions
+		std::vector<function_instance*>& _used_functions
 	) : 
 		equations(std::move(_equations)), 
 		used_variables(std::move(_used_variables)), 
@@ -668,6 +657,8 @@ using variables_collection = heterogeneous_map<std::string, variable_definition,
 
 struct function_instance
 {
+	const function_definition* function;
+
 	bool valid;
 	std::vector<const data_type*> arguments_types;
 	std::vector<const data_type*> variables_types;
@@ -682,11 +673,15 @@ struct function_instance
 	}
 
 	std::string translated;
+
+	function_instance(function_definition* _function) : function(_function) {};
 };
 
 struct function_definition
 {
 	bool valid = true;
+
+	std::string function_name;
 	std::string library_name;
 
 	std::vector<std::string> arguments;
@@ -927,15 +922,13 @@ struct material_parsing_state;
 
 std::unordered_map<std::string, translator*> translators;
 
-struct used_function_instance_info;
-
 struct translator
 {
 	using expressions_translator = std::string(*)(
 		const expression* const& exp,
 		const inlined_variables* inlined,
 		const material_parsing_state& state
-		);
+	);
 	const expressions_translator _expression_translator;
 
 	using variables_declarations_translator = std::string(*)(
@@ -943,14 +936,13 @@ struct translator
 		const variable_definition* const& var,
 		const inlined_variables* inlined,
 		const material_parsing_state& state
-		);
+	);
 	const variables_declarations_translator _variable_declaration_translator;
 
 	using functions_translator = std::string(*)(
 		const function_instance* instance,
-		const used_function_instance_info* info,
 		const material_parsing_state& state
-		);
+	);
 	const functions_translator _functions_translator;
 
 	translator(
@@ -1473,10 +1465,10 @@ void get_used_variables_recursive(const expression* exp, counting_set<named_vari
 }
 
 //same but for functions
-void get_used_functions_recursive(expression* exp, counting_set<std::pair<function_instance*, used_function_instance_info>*>& to_dump)
+void get_used_functions_recursive(expression* exp, counting_set<function_instance*>& to_dump)
 {
 	for (auto& func : exp->used_functions)
-		to_dump.insert(&func);
+		to_dump.insert(func);
 
 	for (auto& func : exp->used_variables)
 		get_used_functions_recursive(func->second.definition, to_dump);
@@ -1660,7 +1652,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 		case directive_type::dump_functions:
 		{
-			counting_set<std::pair<function_instance*, used_function_instance_info>*> to_dump;
+			counting_set<function_instance*> to_dump;
 
 			for (auto& prop : directive.payload)
 			{
@@ -1670,8 +1662,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 			for (auto itr = to_dump.begin(); itr != to_dump.end(); itr++)
 				returned_value.sources.back() += translator->_functions_translator(
-					itr->first->first,
-					&itr->first->second,
+					itr->first,
 					state
 				);
 
@@ -1782,7 +1773,7 @@ namespace expressions_parsing_utilities
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::vector<named_variable*>& used_variables,
-		used_functions_instances& used_functions,
+		std::vector<function_instance*>& used_functions,
 		std::string& error
 	);
 	void validate_node(
@@ -1989,7 +1980,7 @@ void expressions_parsing_utilities::shunting_yard(
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
 	std::vector<named_variable*>& used_variables,
-	used_functions_instances& used_functions,
+	std::vector<function_instance*>& used_functions,
 	std::string& error
 )
 {
@@ -2548,7 +2539,7 @@ inline void expressions_parsing_utilities::validate_node(
 				pop_types(func_def.arguments.size());
 				types.push_back(func_instance.returned_type);
 
-				exp->used_functions.insert({ &func_instance, { func_name, &func_def } });
+				exp->used_functions.push_back(&func_instance);
 
 				return;
 			}
@@ -2562,7 +2553,7 @@ inline void expressions_parsing_utilities::validate_node(
 			error
 		);
 
-		exp->used_functions.insert({ &func_def.instances.back(), { func_name, &func_def } });
+		exp->used_functions.push_back(&func_def.instances.back());
 
 		if (error != "")
 			error = invalid_arguments_error() + '\n' + error;
@@ -2599,7 +2590,7 @@ expression* get_expression(
 	std::list<expression::node*> operators;
 
 	std::vector<named_variable*> used_vars;
-	used_functions_instances used_funcs;
+	std::vector<function_instance*> used_funcs;
 
 	expressions_parsing_utilities::shunting_yard(
 		source, 
@@ -2739,7 +2730,7 @@ void instantiate_function(
 		}
 
 		for (auto& func : var.definition->used_functions)
-			used_functions.insert(func);
+			used_functions.push_back(func);
 
 		itr++;
 	}
@@ -2748,9 +2739,9 @@ void instantiate_function(
 	auto return_type = validate_expression(func_def.returned_value, nullptr, functions, error2);
 
 	for (auto& func : func_def.returned_value->used_functions)
-		used_functions.insert(func);
+		used_functions.push_back(func);
 
-	func_def.instances.push_back({});
+	func_def.instances.push_back({ &func_def });
 	auto& instance = func_def.instances.back();
 
 	instance.valid = error == "";
@@ -3273,8 +3264,9 @@ void handles_common::func(const std::string& source, context_public_implementati
 
 	throw_error(!is_at_line_end(source, iterator), "Expected line end");
 
-	auto& func_def = state.functions.insert({ name, {} })->second;
+	auto& func_def = state.functions.insert({name, function_definition{}})->second;
 	func_def.arguments = std::move(arguments);
+	func_def.function_name = std::move(name);
 
 	for (auto& arg : func_def.arguments)
 		func_def.variables.insert({ arg, {} });
