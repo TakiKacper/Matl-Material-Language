@@ -1602,6 +1602,70 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	inlined_variables inlined;
 
+	auto dump_property = [&](const directive& directive)
+	{
+		returned_value.sources.back() += translator->_expression_translator(
+			state.properties.at(directive.payload.at(0)).definition,
+			&inlined
+		);
+	};
+
+	auto translate_variables = [&](counting_set<named_variable*>& variables)
+	{
+		for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
+		{
+			if (itr->second > 1)
+			{
+				returned_value.sources.back() += translator->_variable_declaration_translator(
+					itr->first->first,
+					&itr->first->second,
+					&inlined
+				);
+			}
+			else
+			{
+				inlined.insert({
+					itr->first,
+					"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
+					});
+			}
+		};
+	};
+
+	auto dump_variables = [&](const directive& directive)
+	{
+		counting_set<named_variable*> variables;
+
+		for (auto& prop : directive.payload)
+		{
+			const auto& prop_exp = state.properties.at(prop).definition;
+			get_used_variables_recursive(prop_exp, variables);
+		}
+
+		translate_variables(variables);
+	};
+
+	auto dump_functions = [&](const directive& directive)
+	{
+		counting_set<function_instance*> functions;
+
+		for (auto& prop : directive.payload)
+		{
+			const auto& prop_exp = state.properties.at(prop).definition;
+			get_used_functions_recursive(prop_exp, functions);
+		}
+
+		for (auto itr = functions.begin(); itr != functions.end(); itr++)
+		{
+			counting_set<named_variable*> variables;
+			get_used_variables_recursive(itr->first->function->returned_value, variables);
+
+			returned_value.sources.back() += translator->_function_header_translator(itr->first);
+			translate_variables(variables);
+			returned_value.sources.back() += translator->_function_return_statement_translator(itr->first, inlined);
+		}
+	};
+
 	for (auto& directive : state.domain->directives)
 	{
 		using directive_type = directive_type;
@@ -1619,78 +1683,14 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			returned_value.sources.back().reserve(preallocated_shader_memory);
 			break;
 		case directive_type::dump_property:
-		{
-			returned_value.sources.back() += translator->_expression_translator(
-				state.properties.at(directive.payload.at(0)).definition, 
-				&inlined
-			);
+			dump_property(directive);
 			break;
-		}
 		case directive_type::dump_variables:
-		{
-			counting_set<named_variable*> variables;
-
-			for (auto& prop : directive.payload)
-			{
-				const auto& prop_exp = state.properties.at(prop).definition;
-				get_used_variables_recursive(prop_exp, variables);
-			}
-
-			for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
-			{
-				if (itr->second > 1)
-					returned_value.sources.back() += translator->_variable_declaration_translator(
-						itr->first->first,
-						&itr->first->second,
-						&inlined
-					);
-				else
-					inlined.insert({
-						itr->first, 
-						"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
-					});
-			}
-
+			dump_variables(directive);
 			break;
-		}
 		case directive_type::dump_functions:
-		{
-			counting_set<function_instance*> functions;
-
-			for (auto& prop : directive.payload)
-			{
-				const auto& prop_exp = state.properties.at(prop).definition;
-				get_used_functions_recursive(prop_exp, functions);
-			}
-
-			for (auto itr = functions.begin(); itr != functions.end(); itr++)
-			{
-				counting_set<named_variable*> variables;
-				get_used_variables_recursive(itr->first->function->returned_value, variables);
-
-				returned_value.sources.back() += translator->_function_header_translator(itr->first);
-
-				for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
-				{
-					if (itr->second > 1)
-						returned_value.sources.back() += translator->_variable_declaration_translator(
-							itr->first->first,
-							&itr->first->second,
-							&inlined
-						);
-					else
-						inlined.insert({
-							itr->first,
-							"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
-							});
-				}
-
-				returned_value.sources.back() += translator->_function_return_statement_translator(itr->first, inlined);
-
-			}
-
+			dump_functions(directive);
 			break;
-		}
 		}
 	}
 
