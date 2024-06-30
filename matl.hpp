@@ -440,7 +440,7 @@ inline string_ref get_string_ref(const std::string& source, size_t& iterator, st
 
 	if (iterator == begin)
 	{
-		std::string error = "Expected token not: ";
+		error = "Expected token not: ";
 
 		if (source.at(iterator) == ' ')
 			error += "space";
@@ -655,6 +655,17 @@ struct variable_definition
 };
 using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_string_solver>;
 
+extern const data_type* bool_data_type;
+extern const data_type* texture_data_type;
+struct parameter_definition
+{
+	const data_type* return_type;
+
+	std::vector<double> default_value_numeric;
+	std::string			default_value_texture;
+};
+using parameters_collection = heterogeneous_map<std::string, parameter_definition, hgm_string_solver>;
+
 struct function_instance
 {
 	const function_definition* function;
@@ -848,6 +859,7 @@ const std::unordered_map<char, uint8_t> vector_components_names = {
 //data type applied to all integer and float literals eg. 1; 2; 3.14
 const data_type* scalar_data_type = get_data_type({ "scalar" });
 const data_type* bool_data_type = get_data_type({ "bool" });
+const data_type* texture_data_type = get_data_type({ "texture" });
 
 const char comment_char = '#';
 const char symbols_prefix = '$';
@@ -1425,6 +1437,7 @@ struct material_parsing_state
 	std::list<std::string> errors;
 
 	variables_collection variables;
+	parameters_collection parameters;
 	function_collection functions;
 	libraries_collection libraries;
 	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
@@ -2923,9 +2936,7 @@ void domain_directives_handles::split(const std::string& source, context_public_
 	throw_error(state.expose_scope, "Cannot use this directive here");
 	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
 
-	state.domain->directives.push_back(
-		{ directive_type::split, {} }
-	);
+	state.domain->directives.push_back({ directive_type::split, {} });
 }
 
 #pragma endregion
@@ -2971,6 +2982,9 @@ void material_keywords_handles::let
 	{
 		throw_error(state.variables.find(var_name) != state.variables.end(),
 			"Variable named " + std::string(var_name) + " already exists");
+
+		throw_error(state.parameters.find(var_name) != state.parameters.end(),
+			"Parameter named " + std::string(var_name) + " already exists");
 
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
 		var_def.definition = get_expression(
@@ -3022,14 +3036,11 @@ void material_keywords_handles::property
 
 	get_spaces(source, iterator);
 	auto property_name = get_string_ref(source, iterator, error);
-
 	rethrow_error();
 
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
-
-	if (assign_operator != '=')
-		error = "Expected '='";
+	throw_error(assign_operator != '=', "Expected '='");
 
 	auto itr = state.domain->properties.find(property_name);
 	throw_error(itr == state.domain->properties.end(), "No such property: " + std::string(property_name));
@@ -3066,11 +3077,11 @@ void material_keywords_handles::_using
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
-	auto target = get_string_ref(source, iterator, error);
+	auto using_type = get_string_ref(source, iterator, error);
 
 	rethrow_error();
 
-	if (target == "domain")
+	if (using_type == "domain")
 	{
 		throw_error(state.domain != nullptr, "Domain is already specified");
 
@@ -3082,23 +3093,43 @@ void material_keywords_handles::_using
 
 		state.domain = itr->second;
 	}
-	else if (target == "library")
+	else if (using_type == "library")
 	{
 		get_spaces(source, iterator);
 		auto library_name = get_rest_of_line(source, iterator);
 
 		auto itr = context.libraries.find(library_name);
-		if (itr == context.libraries.end())
-			error = "No such library: " + std::string(library_name);
-
-		rethrow_error();
+		throw_error(itr == context.libraries.end(), "No such library: " + std::string(library_name));
 
 		state.libraries.insert({ library_name, itr->second });
 	}
+	else if (using_type == "parameter")
+	{
+		get_spaces(source, iterator);
+		auto parameter_name = get_string_ref(source, iterator, error);
+		rethrow_error();
+
+		get_spaces(source, iterator);
+		auto assign_operator = get_char(source, iterator);
+		throw_error(assign_operator != '=', "Expected '='");
+
+		throw_error(state.parameters.find(parameter_name) != state.parameters.end(),
+			"Parameter named " + std::string(parameter_name) + " already exists");
+
+		throw_error(state.variables.find(parameter_name) != state.variables.end(),
+			"Variable named " + std::string(parameter_name) + " already exists");
+
+		state.parameters.insert({ parameter_name, {} });
+		auto& param_def = state.parameters.recent().second;
+
+		//Load default value, determine the type
+		param_def.return_type = scalar_data_type;	//TODO
+		param_def.default_value_numeric = { 2 };
+	}
 	else //Call custom case
 	{
-		auto itr = context.custom_using_handles.find(target);
-		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(target));
+		auto itr = context.custom_using_handles.find(using_type);
+		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(using_type));
 
 		get_spaces(source, iterator);
 		auto arg = get_rest_of_line(source, iterator);;
@@ -3115,6 +3146,9 @@ void material_keywords_handles::func
 	auto& name = state.functions.recent().first;
 	throw_error(state.variables.find(name) != state.variables.end(),
 		"Variable named " + std::string(name) + " already exists");
+
+	throw_error(state.parameters.find(name) != state.parameters.end(),
+		"Parameter named " + std::string(name) + " already exists");
 }
 
 void material_keywords_handles::_return
@@ -3189,14 +3223,14 @@ void library_keywords_handles::_using
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
-	auto target = get_string_ref(source, iterator, error);
+	auto using_type = get_string_ref(source, iterator, error);
 	rethrow_error();
 
-	if (target == "domain")
+	if (using_type == "domain")
 	{
-		throw_error(true, "Cannot use domain inside library");
+		throw_error(true, "Cannot use domain inside libraries");
 	}
-	else if (target == "library")
+	else if (using_type == "library")
 	{
 		get_spaces(source, iterator);
 		auto library_name = get_rest_of_line(source, iterator);
@@ -3223,10 +3257,14 @@ void library_keywords_handles::_using
 
 		state.libraries.insert({ library_name, itr->second });
 	}
+	else if (using_type == "parameter")
+	{
+		throw_error(true, "Cannot use parameters inside libraries");
+	}
 	else //Call custom case
 	{
-		auto itr = context.custom_using_handles.find(target);
-		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(target));
+		auto itr = context.custom_using_handles.find(using_type);
+		throw_error(itr == context.custom_using_handles.end(), "No such using case: " + std::string(using_type));
 
 		get_spaces(source, iterator);
 		auto arg = get_rest_of_line(source, iterator);;
