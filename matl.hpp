@@ -926,33 +926,38 @@ struct translator
 {
 	using expressions_translator = std::string(*)(
 		const expression* const& exp,
-		const inlined_variables* inlined,
-		const material_parsing_state& state
+		const inlined_variables* inlined
 	);
 	const expressions_translator _expression_translator;
 
 	using variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
-		const inlined_variables* inlined,
-		const material_parsing_state& state
+		const inlined_variables* inlined
 	);
 	const variables_declarations_translator _variable_declaration_translator;
 
-	using functions_translator = std::string(*)(
-		const function_instance* instance,
-		const material_parsing_state& state
+	using function_header_translator = std::string(*)(
+		const function_instance* instance
 	);
-	const functions_translator _functions_translator;
+	const function_header_translator _function_header_translator;
+
+	using function_return_statement_translator = std::string(*)(
+		const function_instance* instance,
+		const inlined_variables& inlined
+	);
+	const function_return_statement_translator _function_return_statement_translator;
 
 	translator(
-		std::string _language_name,
-		expressions_translator __expression_translator,
-		variables_declarations_translator __variable_declaration_translator,
-		functions_translator __functions_translator
+		std::string								_language_name,
+		expressions_translator					__expression_translator,
+		variables_declarations_translator		__variable_declaration_translator,
+		function_header_translator				__function_header_translator,
+		function_return_statement_translator	__function_return_statement_translator
 	) : _expression_translator(__expression_translator),
 		_variable_declaration_translator(__variable_declaration_translator),
-		_functions_translator(__functions_translator)
+		_function_header_translator(__function_header_translator),
+		_function_return_statement_translator(__function_return_statement_translator)
 	{
 		translators.insert({ _language_name, this });
 	};
@@ -1459,7 +1464,7 @@ void get_used_variables_recursive(const expression* exp, counting_set<named_vari
 {
 	for (auto& var : exp->used_variables)
 	{
-		if (to_dump.insert(var) == 1)
+		if (var->second.definition != nullptr && to_dump.insert(var) == 1)
 			get_used_variables_recursive(var->second.definition, to_dump);
 	}	
 }
@@ -1616,35 +1621,33 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		case directive_type::dump_property:
 		{
 			returned_value.sources.back() += translator->_expression_translator(
-				state.properties.at(directive.payload.at(0)).definition,
-				&inlined,
-				state
+				state.properties.at(directive.payload.at(0)).definition, 
+				&inlined
 			);
 			break;
 		}
 		case directive_type::dump_variables:
 		{
-			counting_set<named_variable*> to_dump;
+			counting_set<named_variable*> variables;
 
 			for (auto& prop : directive.payload)
 			{
 				const auto& prop_exp = state.properties.at(prop).definition;
-				get_used_variables_recursive(prop_exp, to_dump);
+				get_used_variables_recursive(prop_exp, variables);
 			}
 
-			for (auto itr = to_dump.rbegin(); itr != to_dump.rend(); itr++)
+			for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
 			{
 				if (itr->second > 1)
 					returned_value.sources.back() += translator->_variable_declaration_translator(
 						itr->first->first,
 						&itr->first->second,
-						&inlined,
-						state
+						&inlined
 					);
 				else
 					inlined.insert({
 						itr->first, 
-						"(" + translator->_expression_translator(itr->first->second.definition, &inlined, state) + ")"
+						"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
 					});
 			}
 
@@ -1652,19 +1655,39 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 		case directive_type::dump_functions:
 		{
-			counting_set<function_instance*> to_dump;
+			counting_set<function_instance*> functions;
 
 			for (auto& prop : directive.payload)
 			{
 				const auto& prop_exp = state.properties.at(prop).definition;
-				get_used_functions_recursive(prop_exp, to_dump);
+				get_used_functions_recursive(prop_exp, functions);
 			}
 
-			for (auto itr = to_dump.begin(); itr != to_dump.end(); itr++)
-				returned_value.sources.back() += translator->_functions_translator(
-					itr->first,
-					state
-				);
+			for (auto itr = functions.begin(); itr != functions.end(); itr++)
+			{
+				counting_set<named_variable*> variables;
+				get_used_variables_recursive(itr->first->function->returned_value, variables);
+
+				returned_value.sources.back() += translator->_function_header_translator(itr->first);
+
+				for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
+				{
+					if (itr->second > 1)
+						returned_value.sources.back() += translator->_variable_declaration_translator(
+							itr->first->first,
+							&itr->first->second,
+							&inlined
+						);
+					else
+						inlined.insert({
+							itr->first,
+							"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
+							});
+				}
+
+				returned_value.sources.back() += translator->_function_return_statement_translator(itr->first, inlined);
+
+			}
 
 			break;
 		}
