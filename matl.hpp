@@ -1610,24 +1610,35 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		);
 	};
 
+	auto should_inline_variable = [&](const named_variable* var, const uint32_t& uses_count) -> bool
+	{
+		return
+			var->second.definition->equations.size() == 1 &&							//variables does not contain ifs
+			(																			//and
+				uses_count <= 1 														//variables is used only once 
+				||																		//or
+				var->second.definition->equations.front()->value->nodes.size() == 1		//it is made of a single node
+			);
+	};
+
 	auto translate_variables = [&](counting_set<named_variable*>& variables)
 	{
 		for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
 		{
-			if (itr->second > 1)
+			if (should_inline_variable(itr->first, itr->second))
+			{
+				inlined.insert({
+					itr->first,
+					"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
+				});
+			}
+			else
 			{
 				returned_value.sources.back() += translator->_variable_declaration_translator(
 					itr->first->first,
 					&itr->first->second,
 					&inlined
 				);
-			}
-			else
-			{
-				inlined.insert({
-					itr->first,
-					"(" + translator->_expression_translator(itr->first->second.definition, &inlined) + ")"
-					});
 			}
 		};
 	};
@@ -2273,14 +2284,14 @@ _shunting_yard_loop:
 		else if (node_str.at(0) == symbols_prefix)
 		{
 			new_node->type = node_type::symbol;
-
 			throw_error(!can_use_symbols, "Cannot use symbols here");
 
-			node_str.begin++;
+			get_spaces(source, iterator);
+			auto symbol_name = get_string_ref(source, iterator, error);
+			rethrow_error();
 
-			auto itr = domain->symbols.find(node_str);
-
-			throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(node_str));
+			auto itr = domain->symbols.find(symbol_name);
+			throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
 
 			new_node->value.symbol = &(itr->second);
 			output.push_back(new_node);
