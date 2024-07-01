@@ -2383,6 +2383,8 @@ _shunting_yard_loop:
 		}
 		else if (is_function_call(source, iterator))
 		{
+			throw_error(functions == nullptr, "Cannot use functions here");
+
 			int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
 			rethrow_error();
 
@@ -2436,8 +2438,11 @@ _shunting_yard_loop:
 		{
 			accepts_right_unary_operator = false;
 
+			throw_error(variables == nullptr, "Cannot use variables, parameters and functions in here");
+
 			//Check if variable
 			auto itr = variables->find(node_str);
+
 			if (itr != variables->end())
 			{
 				new_node->type = node_type::variable;
@@ -3226,9 +3231,61 @@ void material_keywords_handles::_using
 		state.parameters.insert({ parameter_name, {} });
 		auto& param_def = state.parameters.recent().second;
 
-		//Load default value, determine the type
-		param_def.type = scalar_data_type;	//TODO
-		param_def.default_value_numeric = { 2 };
+		get_spaces(source, iterator);
+		auto value = get_rest_of_line(source, iterator);
+
+		if (expressions_parsing_utilities::is_scalar_literal(value, error))
+		{
+			param_def.type = scalar_data_type;
+			param_def.default_value_numeric = { std::stof(value) };
+			rethrow_error();
+		}
+		else if (source.at(value.begin) == '(')
+		{
+			iterator = value.begin + 1;
+			bool hitted_parentheses_end = false;
+			std::string buffer;
+			buffer.reserve(16);
+
+			while (!(is_at_line_end(source, iterator)))
+			{
+				auto& c = source.at(iterator);
+
+				if (c == ',')
+				{
+					expressions_parsing_utilities::is_scalar_literal(buffer, error);
+					rethrow_error();
+					param_def.default_value_numeric.push_back({ std::stof(buffer) });
+					buffer.clear();
+				}
+				else if (c == ')')
+				{
+					hitted_parentheses_end = true;
+
+					expressions_parsing_utilities::is_scalar_literal(buffer, error);
+					rethrow_error();
+					param_def.default_value_numeric.push_back({ std::stof(buffer) });
+					buffer.clear();
+				}
+				else if (c == ' ' || c == '\t') {}
+				else
+				{
+					throw_error(hitted_parentheses_end, "Unexpected symbol after vector literal end");
+					buffer.push_back(c);
+				}
+
+				iterator++;
+			}
+
+			param_def.type = get_vector_type_of_size(static_cast<uint8_t>(param_def.default_value_numeric.size()));
+
+			throw_error(!hitted_parentheses_end, "Mismatched parentheses");
+		}
+		else
+		{
+			param_def.type = texture_data_type;
+			param_def.default_value_texture = value;
+		}
 	}
 	else //Call custom case
 	{
