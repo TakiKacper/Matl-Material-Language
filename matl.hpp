@@ -100,6 +100,7 @@ const std::string language_version = "0.1";
 
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 #pragma region String Ref
 
@@ -675,6 +676,7 @@ struct variable_definition
 {
 	const data_type* type;
 	expression* definition;
+	unsigned int definition_line = 0;
 	~variable_definition() { delete definition; }
 };
 using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_string_solver>;
@@ -1670,20 +1672,30 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto translate_variables = [&](counting_set<named_variable*>& variables)
 	{
-		for (auto itr = variables.rbegin(); itr != variables.rend(); itr++)
+		std::vector<std::pair<named_variable*, uint32_t>*> order;
+
+		for (auto itr = variables.begin(); itr != variables.end(); itr++)
+			order.push_back(&(*itr));
+
+		std::sort(order.begin(), order.end(), [](std::pair<named_variable*, uint32_t>* const& a, std::pair<named_variable*, uint32_t>* const& b)
 		{
-			if (should_inline_variable(itr->first, itr->second))
+			return a->first->second.definition_line < b->first->second.definition_line;
+		});
+
+		for (auto itr = order.begin(); itr != order.end(); itr++)
+		{
+			if (should_inline_variable((*itr)->first, (*itr)->second))
 			{
 				inlined.insert({
-					itr->first,
-					"(" + translator->expression_translator(itr->first->second.definition, &inlined) + ")"
+					(*itr)->first,
+					"(" + translator->expression_translator((*itr)->first->second.definition, &inlined) + ")"
 				});
 			}
 			else
 			{
 				material.sources.back() += translator->variables_declarations_translator(
-					itr->first->first,
-					&itr->first->second,
+					(*itr)->first->first,
+					&(*itr)->first->second,
 					&inlined
 				);
 			}
@@ -2513,7 +2525,8 @@ _shunting_yard_loop:
 _shunting_yard_end:
 	check_expression();
 
-	throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
+	throw_error(expecting_library_function, "Invalid expression");
+	throw_error(if_used && !else_used,		"Each if statement must go along with an else statement")
 
 	if (equations.size() != 0)
 		equations.back()->value = new expression::single_expression(output);
@@ -3093,6 +3106,8 @@ void material_keywords_handles::let
 			"Parameter named " + std::string(var_name) + " already exists");
 
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
+		var_def.definition_line = state.line_counter;
+
 		var_def.definition = get_expression(
 			source, 
 			iterator, 
@@ -3106,6 +3121,7 @@ void material_keywords_handles::let
 			error
 		);
 		rethrow_error();
+
 		var_def.type = validate_expression(var_def.definition, state.domain, &state.functions, error);
 		rethrow_error();
 	}
@@ -3117,6 +3133,8 @@ void material_keywords_handles::let
 			"Variable named " + std::string(var_name) + " already exists");
 
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
+		var_def.definition_line = state.line_counter;
+
 		var_def.definition = get_expression(
 			source,
 			iterator,
@@ -3355,6 +3373,8 @@ void library_keywords_handles::let
 		"Function named " + std::string(var_name) + " already exists");
 
 	auto& var_def = func_def.variables.insert({ var_name, {} })->second;
+	var_def.definition_line = state.line_counter;
+
 	var_def.definition = get_expression(
 		source,
 		iterator,
@@ -3456,6 +3476,8 @@ void library_keywords_handles::_return
 template<class state_class>
 void handles_common::func(const std::string& source, context_public_implementation& context, state_class& state, std::string& error)
 {
+	throw_error(state.function_body, "Cannot declare function inside another function");
+
 	auto& iterator = state.iterator;
 
 	get_spaces(source, iterator);
