@@ -17,6 +17,26 @@ namespace matl
 		bool success = false;
 		std::list<std::string> sources;
 		std::list<std::string> errors;
+
+		struct parameter
+		{
+			std::string name;
+			
+			enum class type : uint8_t
+			{
+				boolean,
+				scalar,
+				vector2,
+				vector3,
+				vector4,
+				texture
+			} type;
+
+			std::list<float> numeric_default_value;
+			std::string		 texture_default_value;
+		};
+
+		std::list<parameter> parameters;
 	};
 
 	struct domain_parsing_raport
@@ -665,7 +685,7 @@ struct parameter_definition
 {
 	const data_type* type;
 
-	std::vector<float>	default_value_numeric;
+	std::list<float>	default_value_numeric;
 	std::string			default_value_texture;
 };
 using parameters_collection = heterogeneous_map<std::string, parameter_definition, hgm_string_solver>;
@@ -1602,26 +1622,26 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	if (state.errors.size() != 0)
 	{
-		parsed_material returned_value;
-		returned_value.success = false;
-		returned_value.errors = std::move(state.errors);
-		return returned_value;
+		parsed_material material;
+		material.success = false;
+		material.errors = std::move(state.errors);
+		return material;
 	}
 
 	if (state.domain == nullptr)
 	{
-		parsed_material returned_value;
-		returned_value.success = false;
-		returned_value.errors = { "[0] Material does not specify the domain" };
-		return returned_value;
+		parsed_material material;
+		material.success = false;
+		material.errors = { "[0] Material does not specify the domain" };
+		return material;
 	}
 
-	parsed_material returned_value;
-	returned_value.sources = { "" };
+	parsed_material material;
+	material.sources = { "" };
 
 	constexpr auto preallocated_shader_memory = 5 * 1024;
 
-	returned_value.sources.back().reserve(preallocated_shader_memory);
+	material.sources.back().reserve(preallocated_shader_memory);
 
 	auto& translator = context->impl->impl.translator;
 
@@ -1631,7 +1651,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto dump_property = [&](const directive& directive)
 	{
-		returned_value.sources.back() += translator->expression_translator(
+		material.sources.back() += translator->expression_translator(
 			state.properties.at(directive.payload.at(0)).definition,
 			&inlined
 		);
@@ -1661,7 +1681,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			}
 			else
 			{
-				returned_value.sources.back() += translator->variables_declarations_translator(
+				material.sources.back() += translator->variables_declarations_translator(
 					itr->first->first,
 					&itr->first->second,
 					&inlined
@@ -1698,16 +1718,16 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			counting_set<named_variable*> variables;
 			get_used_variables_recursive(itr->first->function->returned_value, variables);
 
-			returned_value.sources.back() += translator->function_header_translator(itr->first);
+			material.sources.back() += translator->function_header_translator(itr->first);
 			translate_variables(variables);
-			returned_value.sources.back() += translator->function_return_statement_translator(itr->first, inlined);
+			material.sources.back() += translator->function_return_statement_translator(itr->first, inlined);
 		}
 	};
 
 	auto dump_parameters = [&]()
 	{
 		for (auto& parameter : state.parameters)
-			returned_value.sources.back() += translator->parameters_declarations_translator(parameter.first, &parameter.second);
+			material.sources.back() += translator->parameters_declarations_translator(parameter.first, &parameter.second);
 	};
 
 	for (auto& directive : state.domain->directives)
@@ -1717,14 +1737,14 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		switch (directive.type)
 		{
 		case directive_type::dump_block:
-			returned_value.sources.back() += directive.payload.at(0);
+			material.sources.back() += directive.payload.at(0);
 			break;
 		case directive_type::dump_insertion:
-			returned_value.sources.back() += context_impl.domain_insertions.at(directive.payload.at(0));
+			material.sources.back() += context_impl.domain_insertions.at(directive.payload.at(0));
 			break;
 		case directive_type::split:
-			returned_value.sources.push_back("");
-			returned_value.sources.back().reserve(preallocated_shader_memory);
+			material.sources.push_back("");
+			material.sources.back().reserve(preallocated_shader_memory);
 			break;
 		case directive_type::dump_property:
 			dump_property(directive);
@@ -1741,7 +1761,31 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		}
 	}
 
-	return returned_value;
+	for (auto& param : state.parameters)
+	{
+		material.parameters.push_back({});
+		auto& param_info = material.parameters.back();
+
+		param_info.name = std::move(param.first);
+		
+		if (param.second.type == scalar_data_type)
+			param_info.type = parsed_material::parameter::type::scalar;
+		else if (param.second.type == bool_data_type)
+			param_info.type = parsed_material::parameter::type::boolean;
+		else if (param.second.type == texture_data_type)
+			param_info.type = parsed_material::parameter::type::texture;
+		else if (param.second.default_value_numeric.size() == 2)
+			param_info.type = parsed_material::parameter::type::vector2;
+		else if (param.second.default_value_numeric.size() == 3)
+			param_info.type = parsed_material::parameter::type::vector3;
+		else if (param.second.default_value_numeric.size() == 4)
+			param_info.type = parsed_material::parameter::type::vector4;
+
+		param_info.texture_default_value = std::move(param.second.default_value_texture);
+		param_info.numeric_default_value = std::move(param.second.default_value_numeric);
+	}
+
+	return material;
 }
 
 #pragma endregion
