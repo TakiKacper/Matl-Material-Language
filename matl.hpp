@@ -2337,7 +2337,12 @@ _shunting_yard_loop:
 			handle_comma();
 			accepts_right_unary_operator = true;
 		}
-		else if (node_str.at(0) == '.' && output.size() != 0 && output.back()->type == node_type::variable)
+		else if (node_str.at(0) == '.' && output.size() != 0 && output.back()->type == node_type::library)
+		{
+			expecting_library_function = true;
+			continue;
+		}
+		else if (node_str.at(0) == '.' && output.size() != 0)
 		{
 			new_node->type = node_type::vector_component_access;
 
@@ -2356,11 +2361,6 @@ _shunting_yard_loop:
 
 			accepts_right_unary_operator = false;
 			operators.push_back(new_node);
-		}
-		else if (node_str.at(0) == '.' && output.size() != 0 && output.back()->type == node_type::library)
-		{
-			expecting_library_function = true;
-			continue;
 		}
 		else if (node_str.at(0) == '.')
 		{
