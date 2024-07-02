@@ -658,12 +658,22 @@ struct expression::node
 		const named_parameter*									parameter;
 		const unary_operator*									unary_operator;
 		const binary_operator*									binary_operator;
-		std::pair<uint8_t, uint8_t>								vector_info;				//first is how many nodes build the vector, second is it's real size
+		std::pair<uint8_t, uint8_t>								vector_constructor_info;				//first is how many nodes build the vector, second is it's real size
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
 		parsed_library*											library;
 		~node_value() {};
 	} value;
+
+	~node()
+	{
+		if (type == node_type::scalar_literal)
+			value.scalar_value.~basic_string();
+		else if (type == node_type::vector_component_access)
+			value.included_vector_components.~vector();
+		else if (type == node_type::vector_contructor_operator)
+			value.vector_constructor_info.~pair();
+	}
 };
 
 expression::single_expression::~single_expression()
@@ -2126,7 +2136,7 @@ void expressions_parsing_utilities::shunting_yard(
 		else if (comas <= 3)
 		{
 			new_node->type = node_type::vector_contructor_operator;
-			new_node->value.vector_info.first = comas + 1;
+			new_node->value.vector_constructor_info.first = comas + 1;
 		}
 		else
 			error = "Constructed vector is too long";
@@ -2207,8 +2217,8 @@ void expressions_parsing_utilities::shunting_yard(
 				operands_check_sum++;
 				break;
 			case node_type::vector_contructor_operator:
-				throw_error(operands_check_sum < n->value.vector_info.first, "Invalid expression");
-				operands_check_sum -= n->value.vector_info.first;
+				throw_error(operands_check_sum < n->value.vector_constructor_info.first, "Invalid expression");
+				operands_check_sum -= n->value.vector_constructor_info.first;
 				operands_check_sum++;
 				break;
 			case node_type::binary_operator:
@@ -2651,8 +2661,8 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::vector_contructor_operator:
 	{
-		const auto& vector_constructor_nodes = n->value.vector_info.first;
-		auto& created_vector_size = n->value.vector_info.second = 0;
+		const auto& vector_constructor_nodes = n->value.vector_constructor_info.first;
+		auto& created_vector_size = n->value.vector_constructor_info.second = 0;
 
 		for (int i = 0; i < vector_constructor_nodes; i++)
 		{
