@@ -685,8 +685,10 @@ expression::single_expression::~single_expression()
 struct variable_definition
 {
 	const data_type* type;
+
 	expression* definition;
 	unsigned int definition_line = 0;
+
 	~variable_definition() { delete definition; }
 };
 using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_string_solver>;
@@ -707,9 +709,9 @@ struct function_instance
 	const function_definition* function;
 
 	bool valid;
+	const data_type* returned_type;
 	std::vector<const data_type*> arguments_types;
 	std::vector<const data_type*> variables_types;
-	const data_type* returned_type;
 
 	bool args_matching(const std::vector<const data_type*>& args) const
 	{
@@ -718,8 +720,6 @@ struct function_instance
 				return false;
 		return true;
 	}
-
-	std::string translated;
 
 	function_instance(function_definition* _function) : function(_function) {};
 };
@@ -744,6 +744,7 @@ using function_collection = heterogeneous_map<std::string, function_definition, 
 struct property_definition
 {
 	expression* definition;
+
 	~property_definition() { delete definition;}
 };
 
@@ -1905,7 +1906,6 @@ namespace expressions_parsing_utilities
 		libraries_collection* libraries,
 		bool can_use_symbols,
 		const parsed_domain* domain,
-		expression::node*& new_node,
 		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
@@ -2113,7 +2113,6 @@ void expressions_parsing_utilities::shunting_yard(
 	libraries_collection* libraries,
 	bool can_use_symbols,
 	const parsed_domain* domain,
-	expression::node*& new_node,
 	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
@@ -2128,8 +2127,9 @@ void expressions_parsing_utilities::shunting_yard(
 	auto push_vector_or_parenthesis = [&]()
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
-
 		rethrow_error();
+
+		auto new_node = new node{};
 
 		if (comas == 0)
 			new_node->type = node_type::single_arg_left_parenthesis;
@@ -2165,14 +2165,15 @@ void expressions_parsing_utilities::shunting_yard(
 		if (!found_left_parenthesis)
 			error = "Mismatched parentheses";
 		else if (previous->type == node_type::single_arg_left_parenthesis)
+		{
+			delete operators.back();
 			operators.pop_back();
+		}
 		else
 		{
 			output.push_back(previous);
 			operators.pop_back();
 		}
-
-		delete new_node;
 	};
 
 	auto handle_comma = [&]()
@@ -2198,7 +2199,6 @@ void expressions_parsing_utilities::shunting_yard(
 		}
 
 		operators.clear();
-		new_node = nullptr;
 
 		size_t operands_check_sum = 0;
 		for (auto& n : output)
@@ -2252,7 +2252,6 @@ void expressions_parsing_utilities::shunting_yard(
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
-		new_node = new node{};
 		auto node_str = get_node_str(source, iterator, error);
 		rethrow_error();
 
@@ -2316,6 +2315,8 @@ _shunting_yard_loop:
 		}
 		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
+			auto new_node = new node{};
+
 			new_node->type = node_type::unary_operator;
 			new_node->value.unary_operator = get_unary_operator(node_str);
 
@@ -2325,6 +2326,8 @@ _shunting_yard_loop:
 		}
 		else if (is_binary_operator(node_str))
 		{
+			auto new_node = new node{};
+
 			new_node->type = node_type::binary_operator;
 			new_node->value.binary_operator = get_binary_operator(node_str);
 
@@ -2354,20 +2357,24 @@ _shunting_yard_loop:
 		}
 		else if (node_str.at(0) == '.' && output.size() != 0)
 		{
-			new_node->type = node_type::vector_component_access;
-
 			get_spaces(source, iterator);
 			auto components = get_string_ref(source, iterator, error);
 
 			rethrow_error();
 			throw_error(components.size() > 4, "Constructed vector is too long: " + std::string(node_str));
 
+			std::vector<uint8_t> included_vector_components;
+
 			for (size_t i = 0; i < components.size(); i++)
 			{
 				auto itr = vector_components_names.find(components.at(i));
 				throw_error(itr == vector_components_names.end(), error = "No such vector component: " + components.at(i));
-				new_node->value.included_vector_components.push_back(itr->second);
+				included_vector_components.push_back(itr->second);
 			}
+
+			auto new_node = new node{};
+			new_node->type = node_type::vector_component_access;
+			new_node->value.included_vector_components = std::move(included_vector_components);
 
 			accepts_right_unary_operator = false;
 			operators.push_back(new_node);
@@ -2380,6 +2387,8 @@ _shunting_yard_loop:
 		{
 			rethrow_error();
 
+			auto new_node = new node{};
+
 			new_node->type = node_type::scalar_literal;
 			new_node->value.scalar_value = node_str;
 			output.push_back(new_node);
@@ -2388,7 +2397,6 @@ _shunting_yard_loop:
 		}
 		else if (node_str.at(0) == symbols_prefix)
 		{
-			new_node->type = node_type::symbol;
 			throw_error(!can_use_symbols, "Cannot use symbols here");
 
 			get_spaces(source, iterator);
@@ -2398,7 +2406,11 @@ _shunting_yard_loop:
 			auto itr = domain->symbols.find(symbol_name);
 			throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
 
+			auto new_node = new node{};
+
+			new_node->type = node_type::symbol;
 			new_node->value.symbol = &(itr->second);
+
 			output.push_back(new_node);
 
 			accepts_right_unary_operator = false;
@@ -2445,12 +2457,14 @@ _shunting_yard_loop:
 				+ " arguments, not " + std::to_string(args_ammount);
 			);
 
-			new_node->type = node_type::function;
-			new_node->value.function = &(*itr);
-
-			throw_error(new_node->value.function->second.returned_value == nullptr,
+			throw_error((*itr).second.returned_value == nullptr,
 				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 			);
+
+			auto new_node = new node{};
+
+			new_node->type = node_type::function;
+			new_node->value.function = &(*itr);
 
 			insert_operator(operators, output, new_node);
 
@@ -2467,11 +2481,12 @@ _shunting_yard_loop:
 
 			if (itr != variables->end())
 			{
+				auto new_node = new node{};
+
 				new_node->type = node_type::variable;
-
 				new_node->value.variable = &(*itr);
-				output.push_back(new_node);
 
+				output.push_back(new_node);
 				used_variables.push_back(&(*itr));
 
 				continue;
@@ -2482,9 +2497,11 @@ _shunting_yard_loop:
 				auto itr2 = parameters->find(node_str);
 				if (itr2 != parameters->end())
 				{
-					new_node->type = node_type::parameter;
+					auto new_node = new node{};
 
+					new_node->type = node_type::parameter;
 					new_node->value.parameter = &(*itr2);
+
 					output.push_back(new_node);
 
 					continue;
@@ -2496,6 +2513,8 @@ _shunting_yard_loop:
 			throw_error(itr3 == libraries->end(), "No such variable: " + std::string(node_str));
 
 			library_name = { node_str };
+
+			auto new_node = new node{};
 
 			new_node->type = node_type::library;
 			new_node->value.library = itr3->second;
@@ -2754,8 +2773,6 @@ expression* get_expression(
 	std::string& error
 )
 {
-	expression::node* new_node = nullptr;
-
 	std::list<expression::equation*> equations;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
@@ -2774,7 +2791,6 @@ expression* get_expression(
 		libraries,
 		domain != nullptr,
 		domain,
-		new_node,
 		equations,
 		output,
 		operators,
@@ -2785,8 +2801,6 @@ expression* get_expression(
 
 	if (error != "")
 	{
-		if (new_node != nullptr) delete new_node;
-
 		for (auto& n : output)
 			delete n;
 
