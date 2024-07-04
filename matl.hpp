@@ -1984,7 +1984,7 @@ inline bool expressions_parsing_utilities::is_function_call(const std::string& s
 
 inline bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
 {
-	int dot_pos = -1;
+	size_t dot_pos = -1;
 
 	for (size_t i = 0; i < node_str.size(); i++)
 	{
