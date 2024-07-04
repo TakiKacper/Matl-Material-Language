@@ -15,6 +15,7 @@ namespace matl
 	struct parsed_material
 	{
 		bool success = false;
+
 		std::list<std::string> sources;
 		std::list<std::string> errors;
 
@@ -42,13 +43,15 @@ namespace matl
 	struct domain_parsing_raport
 	{
 		bool success = false;
+
 		std::list<std::string> errors;
 	};
 
 	struct library_parsing_raport
 	{
-		std::string library_name;
 		bool success = false;
+
+		std::string library_name;
 		std::list<std::string> errors;
 	};
 
@@ -98,6 +101,7 @@ const std::string language_version = "0.1";
 #define rethrow_error() if (error != "") return
 #define throw_error(condition, _error) if (condition) { error = _error; return; }
 
+#include <memory>
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
@@ -658,12 +662,22 @@ struct expression::node
 		const named_parameter*									parameter;
 		const unary_operator*									unary_operator;
 		const binary_operator*									binary_operator;
-		std::pair<uint8_t, uint8_t>								vector_info;				//first is how many nodes build the vector, second is it's real size
+		std::pair<uint8_t, uint8_t>								vector_constructor_info;				//first is how many nodes build the vector, second is it's real size
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
-		parsed_library*											library;
+		std::shared_ptr<parsed_library>							library;
 		~node_value() {};
 	} value;
+
+	~node()
+	{
+		if (type == node_type::scalar_literal)
+			value.scalar_value.~basic_string();
+		else if (type == node_type::vector_contructor_operator)
+			value.vector_constructor_info.~pair();
+		else if (type == node_type::vector_component_access)
+			value.included_vector_components.~vector();
+	}
 };
 
 expression::single_expression::~single_expression()
@@ -675,8 +689,10 @@ expression::single_expression::~single_expression()
 struct variable_definition
 {
 	const data_type* type;
+
 	expression* definition;
 	unsigned int definition_line = 0;
+
 	~variable_definition() { delete definition; }
 };
 using variables_collection = heterogeneous_map<std::string, variable_definition, hgm_string_solver>;
@@ -697,19 +713,17 @@ struct function_instance
 	const function_definition* function;
 
 	bool valid;
+	const data_type* returned_type;
 	std::vector<const data_type*> arguments_types;
 	std::vector<const data_type*> variables_types;
-	const data_type* returned_type;
 
 	bool args_matching(const std::vector<const data_type*>& args) const
 	{
-		for (int i = 0; i < arguments_types.size(); i++)
+		for (size_t i = 0; i < arguments_types.size(); i++)
 			if (args.at(i) != arguments_types.at(i))
 				return false;
 		return true;
 	}
-
-	std::string translated;
 
 	function_instance(function_definition* _function) : function(_function) {};
 };
@@ -734,6 +748,7 @@ using function_collection = heterogeneous_map<std::string, function_definition, 
 struct property_definition
 {
 	expression* definition;
+
 	~property_definition() { delete definition;}
 };
 
@@ -1057,7 +1072,7 @@ struct parsed_library
 {
 	heterogeneous_map<std::string, function_definition, hgm_string_solver> functions;
 };
-using libraries_collection = heterogeneous_map<std::string, parsed_library*, hgm_string_solver>;
+using libraries_collection = heterogeneous_map<std::string, std::shared_ptr<parsed_library>, hgm_string_solver>;
 
 #pragma endregion
 
@@ -1065,26 +1080,15 @@ using libraries_collection = heterogeneous_map<std::string, parsed_library*, hgm
 
 struct context_public_implementation
 {
-	heterogeneous_map<std::string, parsed_domain*, hgm_string_solver> domains;
+	heterogeneous_map<std::string, std::shared_ptr<parsed_domain>, hgm_string_solver> domains;
 	heterogeneous_map<std::string, std::string, hgm_string_solver> domain_insertions;
 
-	heterogeneous_map<std::string, parsed_library*, hgm_string_solver> libraries;
+	heterogeneous_map<std::string, std::shared_ptr<parsed_library>, hgm_string_solver> libraries;
 	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_handles;
 
 	matl::dynamic_library_parse_request_handle* dlprh = nullptr;
 	translator* translator = nullptr;
-
-	~context_public_implementation();
 };
-
-context_public_implementation::~context_public_implementation()
-{
-	for (auto& domain : domains)
-		delete domain.second;
-
-	for (auto& library : libraries)
-		delete library.second;
-}
 
 struct matl::context::implementation
 {
@@ -1098,7 +1102,7 @@ struct matl::context::implementation
 struct domain_parsing_state
 {
 	size_t iterator = 0;
-	parsed_domain* domain;
+	std::shared_ptr<parsed_domain> domain;
 
 	std::list<std::string> errors;
 
@@ -1136,7 +1140,7 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 	auto& context_impl = context->impl->impl;
 
 	domain_parsing_state state;
-	state.domain = new parsed_domain;
+	state.domain = std::make_shared<parsed_domain>();
 
 	auto& source = domain_source;
 	auto& iterator = state.iterator;
@@ -1270,7 +1274,7 @@ struct library_parsing_state
 	bool function_body = false;
 
 	std::list<std::string> errors;
-	parsed_libraries_stack* parsed_libs_stack = nullptr;
+	std::shared_ptr<parsed_libraries_stack>	 parsed_libs_stack = nullptr;
 	std::list<matl::library_parsing_raport>* parsing_raports;
 
 	function_collection functions;
@@ -1311,17 +1315,10 @@ void parse_library_implementation(
 	const std::string library_name, 
 	const std::string& library_source, 
 	context_public_implementation* context, 
-	parsed_libraries_stack* stack,
+	std::shared_ptr<parsed_libraries_stack> stack,
 	std::list<matl::library_parsing_raport>* parsing_raports
 )
 {
-	bool owns_stack = true;
-
-	if (stack == nullptr)
-		stack = new parsed_libraries_stack;
-	else
-		owns_stack = false;
-
 	{
 		std::string error;
 		stack->push_parsed_lib(library_name, error);
@@ -1336,9 +1333,9 @@ void parse_library_implementation(
 		}
 	}
 
-	parsed_library* parsed = new parsed_library;
-	library_parsing_state state;
+	auto parsed = std::make_shared<parsed_library>();
 
+	library_parsing_state state;
 	state.parsed_libs_stack = stack;
 	state.library_name = library_name;
 	state.parsing_raports = parsing_raports;
@@ -1434,11 +1431,8 @@ void parse_library_implementation(
 		raport.errors = std::move(state.errors);
 	}
 
-	if (owns_stack) delete stack; 
-	else stack->pop(); 
-	
+	stack->pop(); 	
 	parsing_raports->push_back(raport); 
-	return;
 }
 
 std::list<matl::library_parsing_raport> matl::parse_library(const std::string library_name, const std::string& library_source, matl::context* context)
@@ -1453,7 +1447,13 @@ std::list<matl::library_parsing_raport> matl::parse_library(const std::string li
 	}
 
 	std::list<matl::library_parsing_raport> raports;
-	parse_library_implementation(library_name, library_source, &context->impl->impl, nullptr, &raports);
+	parse_library_implementation(
+		library_name, 
+		library_source, 
+		&context->impl->impl, 
+		std::make_shared<parsed_libraries_stack>(), 
+		&raports
+	);
 
 	return raports;
 }
@@ -1478,7 +1478,7 @@ struct material_parsing_state
 	libraries_collection libraries;
 	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
 
-	const parsed_domain* domain = nullptr;
+	std::shared_ptr<const parsed_domain> domain = nullptr;
 };
 
 using keyword_handle = void(*)(
@@ -1639,6 +1639,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	}
 
 	parsed_material material;
+	material.success = true;
 	material.sources = { "" };
 
 	constexpr auto preallocated_shader_memory = 5 * 1024;
@@ -1646,8 +1647,6 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	material.sources.back().reserve(preallocated_shader_memory);
 
 	auto& translator = context->impl->impl.translator;
-
-	std::string invalid_insertion;
 
 	inlined_variables inlined;
 
@@ -1893,9 +1892,7 @@ namespace expressions_parsing_utilities
 		parameters_collection* parameters,
 		function_collection* functions,
 		libraries_collection* libraries,
-		bool can_use_symbols,
-		const parsed_domain* domain,
-		expression::node*& new_node,
+		std::shared_ptr<const parsed_domain> domain,
 		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
@@ -1906,8 +1903,8 @@ namespace expressions_parsing_utilities
 	void validate_node(
 		expression* exp,
 		expression::node* n,
-		const parsed_domain* domain,
 		std::vector<const data_type*>& types,
+		const std::shared_ptr<const parsed_domain>& domain,
 		const function_collection* functions,
 		std::string& error
 	);
@@ -1987,9 +1984,9 @@ inline bool expressions_parsing_utilities::is_function_call(const std::string& s
 
 inline bool expressions_parsing_utilities::is_scalar_literal(const string_ref& node_str, std::string& error)
 {
-	int dot_pos = -1;
+	size_t dot_pos = -1;
 
-	for (int i = 0; i < node_str.size(); i++)
+	for (size_t i = 0; i < node_str.size(); i++)
 	{
 		if (node_str.at(i) == '.' && dot_pos == -1)
 			dot_pos = i;
@@ -2101,9 +2098,7 @@ void expressions_parsing_utilities::shunting_yard(
 	parameters_collection* parameters,
 	function_collection* functions,
 	libraries_collection* libraries,
-	bool can_use_symbols,
-	const parsed_domain* domain,
-	expression::node*& new_node,
+	std::shared_ptr<const parsed_domain> domain,
 	std::list<expression::equation*>& equations,
 	std::list<expression::node*>& output,
 	std::list<expression::node*>& operators,
@@ -2118,15 +2113,16 @@ void expressions_parsing_utilities::shunting_yard(
 	auto push_vector_or_parenthesis = [&]()
 	{
 		int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
-
 		rethrow_error();
+
+		auto new_node = new node{};
 
 		if (comas == 0)
 			new_node->type = node_type::single_arg_left_parenthesis;
 		else if (comas <= 3)
 		{
 			new_node->type = node_type::vector_contructor_operator;
-			new_node->value.vector_info.first = comas + 1;
+			new_node->value.vector_constructor_info.first = comas + 1;
 		}
 		else
 			error = "Constructed vector is too long";
@@ -2155,14 +2151,15 @@ void expressions_parsing_utilities::shunting_yard(
 		if (!found_left_parenthesis)
 			error = "Mismatched parentheses";
 		else if (previous->type == node_type::single_arg_left_parenthesis)
+		{
+			delete operators.back();
 			operators.pop_back();
+		}
 		else
 		{
 			output.push_back(previous);
 			operators.pop_back();
 		}
-
-		delete new_node;
 	};
 
 	auto handle_comma = [&]()
@@ -2188,7 +2185,6 @@ void expressions_parsing_utilities::shunting_yard(
 		}
 
 		operators.clear();
-		new_node = nullptr;
 
 		size_t operands_check_sum = 0;
 		for (auto& n : output)
@@ -2207,8 +2203,8 @@ void expressions_parsing_utilities::shunting_yard(
 				operands_check_sum++;
 				break;
 			case node_type::vector_contructor_operator:
-				throw_error(operands_check_sum < n->value.vector_info.first, "Invalid expression");
-				operands_check_sum -= n->value.vector_info.first;
+				throw_error(operands_check_sum < n->value.vector_constructor_info.first, "Invalid expression");
+				operands_check_sum -= n->value.vector_constructor_info.first;
 				operands_check_sum++;
 				break;
 			case node_type::binary_operator:
@@ -2242,7 +2238,6 @@ void expressions_parsing_utilities::shunting_yard(
 _shunting_yard_loop:
 	while (!is_at_line_end(source, iterator))
 	{
-		new_node = new node{};
 		auto node_str = get_node_str(source, iterator, error);
 		rethrow_error();
 
@@ -2306,6 +2301,8 @@ _shunting_yard_loop:
 		}
 		else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 		{
+			auto new_node = new node{};
+
 			new_node->type = node_type::unary_operator;
 			new_node->value.unary_operator = get_unary_operator(node_str);
 
@@ -2315,6 +2312,8 @@ _shunting_yard_loop:
 		}
 		else if (is_binary_operator(node_str))
 		{
+			auto new_node = new node{};
+
 			new_node->type = node_type::binary_operator;
 			new_node->value.binary_operator = get_binary_operator(node_str);
 
@@ -2325,6 +2324,7 @@ _shunting_yard_loop:
 		else if (node_str.at(0) == '(')
 		{
 			push_vector_or_parenthesis();
+			rethrow_error();
 			accepts_right_unary_operator = true;
 		}
 		else if (node_str.at(0) == ')')
@@ -2344,20 +2344,24 @@ _shunting_yard_loop:
 		}
 		else if (node_str.at(0) == '.' && output.size() != 0)
 		{
-			new_node->type = node_type::vector_component_access;
-
 			get_spaces(source, iterator);
 			auto components = get_string_ref(source, iterator, error);
 
 			rethrow_error();
 			throw_error(components.size() > 4, "Constructed vector is too long: " + std::string(node_str));
 
+			std::vector<uint8_t> included_vector_components;
+
 			for (size_t i = 0; i < components.size(); i++)
 			{
 				auto itr = vector_components_names.find(components.at(i));
 				throw_error(itr == vector_components_names.end(), error = "No such vector component: " + components.at(i));
-				new_node->value.included_vector_components.push_back(itr->second);
+				included_vector_components.push_back(itr->second);
 			}
+
+			auto new_node = new node{};
+			new_node->type = node_type::vector_component_access;
+			new_node->value.included_vector_components = std::move(included_vector_components);
 
 			accepts_right_unary_operator = false;
 			operators.push_back(new_node);
@@ -2370,6 +2374,8 @@ _shunting_yard_loop:
 		{
 			rethrow_error();
 
+			auto new_node = new node{};
+
 			new_node->type = node_type::scalar_literal;
 			new_node->value.scalar_value = node_str;
 			output.push_back(new_node);
@@ -2378,8 +2384,7 @@ _shunting_yard_loop:
 		}
 		else if (node_str.at(0) == symbols_prefix)
 		{
-			new_node->type = node_type::symbol;
-			throw_error(!can_use_symbols, "Cannot use symbols here");
+			throw_error(domain == nullptr, "Cannot use symbols here");
 
 			get_spaces(source, iterator);
 			auto symbol_name = get_string_ref(source, iterator, error);
@@ -2388,7 +2393,11 @@ _shunting_yard_loop:
 			auto itr = domain->symbols.find(symbol_name);
 			throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
 
+			auto new_node = new node{};
+
+			new_node->type = node_type::symbol;
 			new_node->value.symbol = &(itr->second);
+
 			output.push_back(new_node);
 
 			accepts_right_unary_operator = false;
@@ -2435,12 +2444,14 @@ _shunting_yard_loop:
 				+ " arguments, not " + std::to_string(args_ammount);
 			);
 
-			new_node->type = node_type::function;
-			new_node->value.function = &(*itr);
-
-			throw_error(new_node->value.function->second.returned_value == nullptr,
+			throw_error((*itr).second.returned_value == nullptr,
 				"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 			);
+
+			auto new_node = new node{};
+
+			new_node->type = node_type::function;
+			new_node->value.function = &(*itr);
 
 			insert_operator(operators, output, new_node);
 
@@ -2457,11 +2468,12 @@ _shunting_yard_loop:
 
 			if (itr != variables->end())
 			{
+				auto new_node = new node{};
+
 				new_node->type = node_type::variable;
-
 				new_node->value.variable = &(*itr);
-				output.push_back(new_node);
 
+				output.push_back(new_node);
 				used_variables.push_back(&(*itr));
 
 				continue;
@@ -2472,9 +2484,11 @@ _shunting_yard_loop:
 				auto itr2 = parameters->find(node_str);
 				if (itr2 != parameters->end())
 				{
-					new_node->type = node_type::parameter;
+					auto new_node = new node{};
 
+					new_node->type = node_type::parameter;
 					new_node->value.parameter = &(*itr2);
+
 					output.push_back(new_node);
 
 					continue;
@@ -2486,6 +2500,8 @@ _shunting_yard_loop:
 			throw_error(itr3 == libraries->end(), "No such variable: " + std::string(node_str));
 
 			library_name = { node_str };
+
+			auto new_node = new node{};
 
 			new_node->type = node_type::library;
 			new_node->value.library = itr3->second;
@@ -2540,8 +2556,8 @@ _shunting_yard_end:
 inline void expressions_parsing_utilities::validate_node(
 	expression* exp,
 	expression::node* n,
-	const parsed_domain* domain,
 	std::vector<const data_type*>& types,
+	const std::shared_ptr<const parsed_domain>& domain,
 	const function_collection* functions,
 	std::string& error
 )
@@ -2651,8 +2667,8 @@ inline void expressions_parsing_utilities::validate_node(
 	}
 	case node::node_type::vector_contructor_operator:
 	{
-		const auto& vector_constructor_nodes = n->value.vector_info.first;
-		auto& created_vector_size = n->value.vector_info.second = 0;
+		const auto& vector_constructor_nodes = n->value.vector_constructor_info.first;
+		auto& created_vector_size = n->value.vector_constructor_info.second = 0;
 
 		for (int i = 0; i < vector_constructor_nodes; i++)
 		{
@@ -2740,12 +2756,10 @@ expression* get_expression(
 	parameters_collection* parameters,
 	function_collection* functions,
 	libraries_collection* libraries,
-	const parsed_domain* domain,	//optional, nullptr if symbols are not allowed
+	std::shared_ptr<const parsed_domain> domain,	//optional, nullptr if symbols are not allowed
 	std::string& error
 )
 {
-	expression::node* new_node = nullptr;
-
 	std::list<expression::equation*> equations;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
@@ -2762,9 +2776,7 @@ expression* get_expression(
 		parameters,
 		functions,
 		libraries,
-		domain != nullptr,
 		domain,
-		new_node,
 		equations,
 		output,
 		operators,
@@ -2775,13 +2787,14 @@ expression* get_expression(
 
 	if (error != "")
 	{
-		if (new_node != nullptr) delete new_node;
-
 		for (auto& n : output)
 			delete n;
 
 		for (auto& n : operators)
 			delete n;
+
+		for (auto& e : equations)
+			delete e;
 
 		return nullptr;
 	}
@@ -2791,7 +2804,7 @@ expression* get_expression(
 
 const data_type* validate_expression(
 	expression* exp,
-	const parsed_domain* domain,
+	const std::shared_ptr<const parsed_domain>& domain,
 	const function_collection* functions,
 	std::string& error
 )
@@ -2805,7 +2818,7 @@ const data_type* validate_expression(
 	{
 		for (auto& n : le->nodes)
 		{
-			expressions_parsing_utilities::validate_node(exp, n, domain, types, functions, error);
+			expressions_parsing_utilities::validate_node(exp, n, types, domain, functions, error);
 			if (error != "") break;
 		}
 
