@@ -1652,10 +1652,12 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto dump_property = [&](const directive& directive)
 	{
+		material.sources.back() += '(';
 		material.sources.back() += translator->expression_translator(
 			state.properties.at(directive.payload.at(0)).definition,
 			&inlined
 		);
+		material.sources.back() += ')';
 	};
 
 	auto should_inline_variable = [&](const named_variable* var, const uint32_t& uses_count) -> bool
