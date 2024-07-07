@@ -121,10 +121,9 @@ matl::context* matl::create_context(std::string target_language)
 	return c;
 }
 
-void matl::destroy_context(context*& context)
+void matl::destroy_context(context* context)
 {
 	delete context;
-	context = nullptr;
 }
 
 void matl::context::add_domain_insertion(std::string name, std::string insertion)

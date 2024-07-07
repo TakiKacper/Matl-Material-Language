@@ -54,7 +54,7 @@ namespace matl
 	class context;
 
 	context* create_context(std::string target_language);
-	void destroy_context(context*&);
+	void destroy_context(context*);
 
 	parsed_material parse_material(const std::string& material_source, matl::context* context);
 	std::list<matl::library_parsing_raport> parse_library(const std::string library_name, const std::string& library_source, matl::context* context);
@@ -80,5 +80,5 @@ private:
 	~context();
 
 	friend context* matl::create_context(std::string target_language);
-	friend void matl::destroy_context(matl::context*& context);
+	friend void matl::destroy_context(matl::context* context);
 };
