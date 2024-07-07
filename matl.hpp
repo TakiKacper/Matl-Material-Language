@@ -14,6 +14,11 @@ const std::string language_version = "0.5";
 
 #define MATL_IMPLEMENTATION_INCLUDED
 
+#include <memory>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+
 #include "source/common/common.hpp"
 #include "source/common/string_traversion.hpp"
 #include "source/common/heterogeneous_map.hpp"
