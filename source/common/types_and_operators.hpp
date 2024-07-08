@@ -1,8 +1,8 @@
 #pragma once
 
 struct data_type;
-struct unary_operator;
-struct binary_operator;
+struct unary_operator_definition;
+struct binary_operator_definition;
 
 struct variable_definition;
 struct parameter_definition;
@@ -11,8 +11,8 @@ struct function_instance;
 struct symbol_definition;
 
 const data_type* const get_data_type(const string_ref& name);
-const unary_operator* const get_unary_operator(const string_ref& symbol);
-const binary_operator* const get_binary_operator(const string_ref& symbol);
+const unary_operator_definition* const get_unary_operator(const string_ref& symbol);
+const binary_operator_definition* const get_binary_operator(const string_ref& symbol);
 
 struct data_type
 {
@@ -21,7 +21,7 @@ struct data_type
 		: name(_name) {};
 };
 
-struct unary_operator
+struct unary_operator_definition
 {
 	std::string symbol;
 	uint8_t precedence;
@@ -30,7 +30,7 @@ struct unary_operator
 	struct valid_types_set;
 	std::vector<valid_types_set> allowed_types;
 
-	unary_operator(
+	unary_operator_definition(
 		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
@@ -39,7 +39,7 @@ struct unary_operator
 		precedence(_precedence), allowed_types(_allowed_types) {};
 };
 
-struct unary_operator::valid_types_set
+struct unary_operator_definition::valid_types_set
 {
 	const data_type* operand_type;
 	const data_type* returned_type;
@@ -51,7 +51,7 @@ struct unary_operator::valid_types_set
 		returned_type(get_data_type(_returned_type)) {};
 };
 
-struct binary_operator
+struct binary_operator_definition
 {
 	std::string symbol;
 	uint8_t precedence;
@@ -60,7 +60,7 @@ struct binary_operator
 	struct valid_types_set;
 	std::vector<valid_types_set> allowed_types;
 
-	binary_operator(
+	binary_operator_definition(
 		std::string _symbol,
 		std::string _operation_display_name,
 		uint8_t _precedence,
@@ -69,7 +69,7 @@ struct binary_operator
 		precedence(_precedence), allowed_types(_allowed_types) {};
 };
 
-struct binary_operator::valid_types_set
+struct binary_operator_definition::valid_types_set
 {
 	const data_type* left_operand_type;
 	const data_type* right_operand_type;
@@ -151,8 +151,8 @@ struct expression::node
 		const named_variable*									variable;
 		const symbol_definition*								symbol;
 		const named_parameter*									parameter;
-		const unary_operator*									_unary_operator;
-		const binary_operator*									_binary_operator;
+		const unary_operator_definition*						unary_operator;
+		const binary_operator_definition*						binary_operator;
 		std::pair<uint8_t, uint8_t>								vector_constructor_info;				//first is how many nodes build the vector, second is it's real size
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
