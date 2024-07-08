@@ -6,7 +6,7 @@ const uint8_t numeric_operators_precedence_begin = 4;
 const uint8_t functions_precedence = numeric_operators_precedence_begin + 2;
 
 //unary operators; symbol, display name, precedence, {input type, output type}
-const std::vector<unary_operator> unary_operators
+const std::vector<unary_operator_definition> unary_operators
 {
 	{ "-", "negate", numeric_operators_precedence_begin + 3, {
 		{"scalar", "scalar"},
@@ -21,7 +21,7 @@ const std::vector<unary_operator> unary_operators
 };
 
 //binary operators; symbol, display name, precedence, {input type left, input type right, output type}
-const std::vector<binary_operator> binary_operators
+const std::vector<binary_operator_definition> binary_operators
 {
 	{ "and", "conjunct", logical_operators_precedence_begin, {
 		{"bool", "bool", "bool"}
@@ -133,7 +133,7 @@ const std::unordered_map<char, uint8_t> vector_components_names = {
 	{ 'a', 4 }
 };
 
-inline const unary_operator* const get_unary_operator(const string_ref& symbol)
+inline const unary_operator_definition* const get_unary_operator(const string_ref& symbol)
 {
 	for (auto& op : unary_operators)
 		if (op.symbol == symbol)
@@ -141,7 +141,7 @@ inline const unary_operator* const get_unary_operator(const string_ref& symbol)
 	return nullptr;
 }
 
-inline const binary_operator* const get_binary_operator(const string_ref& symbol)
+inline const binary_operator_definition* const get_binary_operator(const string_ref& symbol)
 {
 	for (auto& op : binary_operators)
 		if (op.symbol == symbol)

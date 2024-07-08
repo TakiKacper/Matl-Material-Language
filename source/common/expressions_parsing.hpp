@@ -674,7 +674,7 @@ namespace expressions_parsing_utilities
 			types.erase(types.end() - ammount, types.end());
 		};
 
-		auto handle_binary_operator = [&](const binary_operator* op)
+		auto handle_binary_operator = [&](const binary_operator_definition* op)
 		{
 			auto left = get_type(1);
 			auto right = get_type(0);
@@ -690,7 +690,7 @@ namespace expressions_parsing_utilities
 			error = "Cannot " + op->operation_display_name + " types: left: " + left->name + " right: " + right->name;
 		};
 
-		auto handle_unary_operator = [&](const unary_operator* op)
+		auto handle_unary_operator = [&](const unary_operator_definition* op)
 		{
 			auto operand = get_type(0);
 

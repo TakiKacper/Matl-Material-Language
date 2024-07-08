@@ -145,7 +145,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	material.sources.back().reserve(preallocated_shader_memory);
 
-	auto& translator = context->impl->impl.translator;
+	auto& translator = context->impl->impl._translator;
 
 	inlined_variables inlined;
 

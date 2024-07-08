@@ -18,6 +18,7 @@ const std::string language_version = "0.5";
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <exception>
 
 #include "source/common/common.hpp"
 #include "source/common/string_traversion.hpp"
@@ -52,7 +53,7 @@ struct context_public_implementation
 	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_handles;
 
 	matl::dynamic_library_parse_request_handle* dlprh = nullptr;
-	translator* translator = nullptr;
+	translator* _translator = nullptr;
 };
 
 struct matl::context::implementation
@@ -117,7 +118,7 @@ matl::context* matl::create_context(std::string target_language)
 		return nullptr;
 
 	auto c = new context;
-	c->impl->impl.translator = itr->second;
+	c->impl->impl._translator = itr->second;
 	return c;
 }
 
