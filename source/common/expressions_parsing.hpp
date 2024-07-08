@@ -147,9 +147,9 @@ namespace expressions_parsing_utilities
 		case expression::node::node_type::function:
 			return functions_precedence;
 		case expression::node::node_type::binary_operator:
-			return node->value.binary_operator->precedence;
+			return node->value._binary_operator->precedence;
 		case expression::node::node_type::unary_operator:
-			return node->value.unary_operator->precedence;
+			return node->value._unary_operator->precedence;
 		case expression::node::node_type::vector_component_access:
 			return 256;
 		}
@@ -404,7 +404,7 @@ namespace expressions_parsing_utilities
 				auto new_node = new node{};
 
 				new_node->type = node_type::unary_operator;
-				new_node->value.unary_operator = get_unary_operator(node_str);
+				new_node->value._unary_operator = get_unary_operator(node_str);
 
 				insert_operator(operators, output, new_node);
 
@@ -415,7 +415,7 @@ namespace expressions_parsing_utilities
 				auto new_node = new node{};
 
 				new_node->type = node_type::binary_operator;
-				new_node->value.binary_operator = get_binary_operator(node_str);
+				new_node->value._binary_operator = get_binary_operator(node_str);
 
 				insert_operator(operators, output, new_node);
 
@@ -833,13 +833,13 @@ namespace expressions_parsing_utilities
 		}
 		case node::node_type::binary_operator:
 		{
-			handle_binary_operator(n->value.binary_operator);
+			handle_binary_operator(n->value._binary_operator);
 			rethrow_error();
 			break;
 		}
 		case node::node_type::unary_operator:
 		{
-			handle_unary_operator(n->value.unary_operator);
+			handle_unary_operator(n->value._unary_operator);
 			rethrow_error();
 			break;
 		}
