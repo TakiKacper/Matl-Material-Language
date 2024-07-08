@@ -148,14 +148,14 @@ struct expression::node
 	union node_value
 	{
 		std::string												scalar_value;
-		const named_variable* variable;
-		const symbol_definition* symbol;
-		const named_parameter* parameter;
-		const unary_operator* unary_operator;
-		const binary_operator* binary_operator;
+		const named_variable*									variable;
+		const symbol_definition*								symbol;
+		const named_parameter*									parameter;
+		const unary_operator*									unary_operator;
+		const binary_operator*									binary_operator;
 		std::pair<uint8_t, uint8_t>								vector_constructor_info;				//first is how many nodes build the vector, second is it's real size
 		std::vector<uint8_t>									included_vector_components;
-		std::pair<std::string, function_definition>* function;
+		std::pair<std::string, function_definition>*			function;
 		std::shared_ptr<parsed_library>							library;
 		~node_value() {};
 	} value;

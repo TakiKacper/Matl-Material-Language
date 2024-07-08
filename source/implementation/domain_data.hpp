@@ -23,6 +23,7 @@ struct symbol_definition
 {
 	const data_type* type;
 	std::string definition;
+
 	symbol_definition(const data_type* _type, std::string _definition)
 		: type(_type), definition(_definition) {};
 };
