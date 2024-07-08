@@ -18,7 +18,7 @@ const std::string language_version = "0.5";
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
-#include <stdexcept>
+#include <exception>
 
 #include "source/common/common.hpp"
 #include "source/common/string_traversion.hpp"

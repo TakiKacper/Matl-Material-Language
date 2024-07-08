@@ -57,7 +57,7 @@ public:
 		for (iterator itr = begin(); itr != end(); itr++)
 			if (_equality_solver::equal(itr->first, key))
 				return itr->second;
-		throw std::exception{"Invalid record"};
+		throw std::exception{};
 	}
 
 	template<class _key2>
@@ -66,7 +66,7 @@ public:
 		for (const_iterator itr = begin(); itr != end(); itr++)
 			if (_equality_solver::equal(itr->first, key))
 				return itr->second;
-		throw std::exception{"Invalid record"};
+		throw std::exception{};
 	}
 
 	template<class _key2>
@@ -111,7 +111,7 @@ public:
 				records.remove(*itr);
 				return;
 			}
-		throw std::exception{"Invalid record"};
+		throw std::exception{};
 	}
 };
 
