@@ -10,31 +10,31 @@ struct translator
 	using _expression_translator = std::string(*)(
 		const expression* const& exp,
 		const inlined_variables* inlined
-		);
+	);
 	const _expression_translator expression_translator;
 
 	using _variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
 		const inlined_variables* inlined
-		);
+	);
 	const _variables_declarations_translator variables_declarations_translator;
 
 	using _parameters_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const parameter_definition* const& param
-		);
+	);
 	_parameters_declarations_translator parameters_declarations_translator;
 
 	using _function_header_translator = std::string(*)(
 		const function_instance* instance
-		);
+	);
 	const _function_header_translator function_header_translator;
 
 	using _function_return_statement_translator = std::string(*)(
 		const function_instance* instance,
 		const inlined_variables& inlined
-		);
+	);
 	const _function_return_statement_translator function_return_statement_translator;
 
 	translator(

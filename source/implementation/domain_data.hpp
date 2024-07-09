@@ -34,4 +34,5 @@ struct parsed_domain
 
 	heterogeneous_map<std::string, const data_type*, hgm_string_solver>  properties;
 	heterogeneous_map<std::string, symbol_definition, hgm_string_solver> symbols;
+	function_collection functions;
 };

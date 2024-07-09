@@ -157,11 +157,11 @@ struct expression::node
 		std::vector<uint8_t>									included_vector_components;
 		std::pair<std::string, function_definition>*			function;
 		std::shared_ptr<parsed_library>							library;
-		node_value() : variable(nullptr) {};
+		//node_value() : variable(nullptr) {};
 		~node_value() {};
 	} value;
 
-	node() {};
+	//node() : value() {};
 	~node()
 	{
 		if (type == node_type::scalar_literal)
@@ -224,8 +224,9 @@ struct function_instance
 struct function_definition
 {
 	bool valid = true;
+	bool is_exposed = false;
 
-	std::string function_name;
+	std::string function_code_name;
 	std::string library_name;
 
 	std::vector<std::string> arguments;

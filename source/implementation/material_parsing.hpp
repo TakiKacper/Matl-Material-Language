@@ -227,6 +227,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		for (auto itr = functions.begin(); itr != functions.end(); itr++)
 		{
+			if ((*itr).first->function->is_exposed) continue;
+
 			counting_set<named_variable*> variables;
 			get_used_variables_recursive(itr->first->function->returned_value, variables);
 
@@ -347,7 +349,7 @@ void material_keywords_handles::let
 		);
 		rethrow_error();
 
-		var_def.type = validate_expression(var_def.definition, state.domain, &state.functions, error);
+		var_def.type = validate_expression(var_def.definition, state.domain, error);
 		rethrow_error();
 	}
 	else
@@ -414,7 +416,7 @@ void material_keywords_handles::property
 	);
 	rethrow_error();
 
-	auto type = validate_expression(prop.definition, state.domain, &state.functions, error);
+	auto type = validate_expression(prop.definition, state.domain, error);
 	rethrow_error();
 
 	if (itr->second != type)

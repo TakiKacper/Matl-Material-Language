@@ -3,7 +3,6 @@
 void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
-	const function_collection* functions,
 	decltype(expression::used_functions)& used_functions,
 	std::string& error
 );
@@ -527,16 +526,22 @@ namespace expressions_parsing_utilities
 					expecting_library_function = false;
 					itr = output.back()->value.library->functions.find(node_str);
 					throw_error(itr == output.back()->value.library->functions.end(), "No such function: " + std::string(node_str));
-					throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(library_name) + "." + std::string(node_str));
 					delete output.back();
 					output.pop_back();
 				}
 				else
 				{
 					itr = functions->find(node_str);
-					throw_error(itr == functions->end(), "No such function: " + std::string(node_str));
-					throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
+					if (itr == functions->end())
+					{
+						//can be done since domain's functions will not be instanciated so their state is not going to change
+						itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
+						throw_error(itr == domain->functions.end(), "No such function: " + std::string(node_str));
+					}
 				}
+
+				throw_error(!expecting_library_function && !itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
+				throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(library_name) + "." + std::string(node_str));	
 
 				throw_error(itr->second.arguments.size() != args_ammount,
 					"Function " + std::string(node_str)
@@ -544,7 +549,7 @@ namespace expressions_parsing_utilities
 					+ " arguments, not " + std::to_string(args_ammount);
 				);
 
-				throw_error((*itr).second.returned_value == nullptr,
+				throw_error((*itr).second.returned_value == nullptr && !(*itr).second.is_exposed,
 					"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 				);
 
@@ -658,7 +663,6 @@ namespace expressions_parsing_utilities
 		expression::node* n,
 		std::vector<const data_type*>& types,
 		const std::shared_ptr<const parsed_domain>& domain,
-		const function_collection* functions,
 		std::string& error
 	)
 	{
@@ -781,10 +785,12 @@ namespace expressions_parsing_utilities
 				}
 			}
 
+			if (func_def.is_exposed)
+				throw_error(true, invalid_arguments_error());
+
 			instantiate_function(
 				func_def,
 				arguments_types,
-				functions,
 				exp->used_functions,
 				error
 			);
@@ -810,7 +816,7 @@ namespace expressions_parsing_utilities
 			auto& var = n->value.variable;
 
 			throw_error(var->second.type == nullptr,
-				"Cannot use variable " + std::string(var->first) + " since it's type could not be discern");
+				"Cannot use variable " + std::string(var->first) + " because it's type could not be discern");
 
 			types.push_back(var->second.type);
 			break;
@@ -820,14 +826,14 @@ namespace expressions_parsing_utilities
 			auto& param = n->value.parameter;
 
 			throw_error(param->second.type == nullptr,
-				"Cannot use variable " + std::string(param->first) + " since it's type could not be discern");
+				"Cannot use parameter " + std::string(param->first) + " because it's type could not be discern");
 
 			types.push_back(param->second.type);
 			break;
 		}
 		case node::node_type::symbol:
 		{
-			throw_error(domain == nullptr, "Cannot use symbols since the domain is not loaded yet");
+			throw_error(domain == nullptr, "Cannot use symbols since the domain is not specified yet");
 			types.push_back(n->value.symbol->type);
 			break;
 		}
@@ -924,7 +930,6 @@ expression* get_expression(
 const data_type* validate_expression(
 	expression* exp,
 	const std::shared_ptr<const parsed_domain>& domain,
-	const function_collection* functions,
 	std::string& error
 )
 {
@@ -937,7 +942,7 @@ const data_type* validate_expression(
 	{
 		for (auto& n : le->nodes)
 		{
-			expressions_parsing_utilities::validate_node(exp, n, types, domain, functions, error);
+			expressions_parsing_utilities::validate_node(exp, n, types, domain, error);
 			if (error != "") break;
 		}
 
@@ -989,7 +994,6 @@ const data_type* validate_expression(
 void instantiate_function(
 	function_definition& func_def,
 	const std::vector<const data_type*> arguments,
-	const function_collection* functions,
 	decltype(expression::used_functions)& used_functions,
 	std::string& error
 )
@@ -1009,7 +1013,7 @@ void instantiate_function(
 
 		std::string error2;
 
-		auto type = validate_expression(var.definition, nullptr, functions, error2);
+		auto type = validate_expression(var.definition, nullptr, error2);
 		var.type = type;
 
 		variables_types.push_back(var.type);
@@ -1030,7 +1034,7 @@ void instantiate_function(
 	}
 
 	std::string error2;
-	auto type = validate_expression(func_def.returned_value, nullptr, functions, error2);
+	auto type = validate_expression(func_def.returned_value, nullptr, error2);
 
 	for (auto& func : func_def.returned_value->used_functions)
 		used_functions.push_back(func);

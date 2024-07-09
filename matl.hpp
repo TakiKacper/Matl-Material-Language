@@ -197,7 +197,7 @@ void handles_common::func(const std::string& source, context_public_implementati
 
 	auto& func_def = state.functions.insert({name, function_definition{}})->second;
 	func_def.arguments = std::move(arguments);
-	func_def.function_name = std::move(name);
+	func_def.function_code_name = std::move(name);
 
 	for (auto& arg : func_def.arguments)
 		func_def.variables.insert({ arg, {} });
