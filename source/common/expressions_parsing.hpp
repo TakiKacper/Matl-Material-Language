@@ -141,15 +141,15 @@ namespace expressions_parsing_utilities
 
 	int get_precedence(const expression::node* node)
 	{
-		switch (node->type)
+		switch (node->get_type())
 		{
 		case expression::node::node_type::function:
 			return functions_precedence;
 		case expression::node::node_type::binary_operator:
-			return node->value.binary_operator->precedence;
+			return node->as_binary_operator()->precedence;
 		case expression::node::node_type::unary_operator:
-			return node->value.unary_operator->precedence;
-		case expression::node::node_type::vector_component_access:
+			return node->as_unary_operator()->precedence;
+		case expression::node::node_type::vector_component_access_operator:
 			return 256;
 		}
 
@@ -158,9 +158,9 @@ namespace expressions_parsing_utilities
 
 	bool is_any_of_left_parentheses(const expression::node* node)
 	{
-		return	node->type == expression::node::node_type::vector_contructor_operator ||
-			node->type == expression::node::node_type::single_arg_left_parenthesis ||
-			node->type == expression::node::node_type::function;
+		return	node->get_type() == expression::node::node_type::vector_contructor_operator ||
+				node->get_type() == expression::node::node_type::left_parenthesis ||
+				node->get_type() == expression::node::node_type::function;
 	}
 
 	void insert_operator(
@@ -173,9 +173,9 @@ namespace expressions_parsing_utilities
 		{
 			auto previous = operators_stack.back();
 			if (
-				previous->type != expression::node::node_type::single_arg_left_parenthesis &&
-				previous->type != expression::node::node_type::vector_contructor_operator &&
-				previous->type != expression::node::node_type::function &&
+				previous->get_type() != expression::node::node_type::left_parenthesis &&
+				previous->get_type() != expression::node::node_type::vector_contructor_operator &&
+				previous->get_type() != expression::node::node_type::function &&
 				get_precedence(previous) >= get_precedence(node)
 				)
 			{
@@ -214,19 +214,22 @@ namespace expressions_parsing_utilities
 			int comas = get_comas_inside_parenthesis(source, iterator - 1, error);
 			rethrow_error();
 
-			auto new_node = new node{};
+			node* new_node;
 
 			if (comas == 0)
-				new_node->type = node_type::single_arg_left_parenthesis;
+			{
+				new_node = node::new_left_parenthesis();
+				operators.push_back(new_node);
+			}
 			else if (comas <= 3)
 			{
-				new_node->type = node_type::vector_contructor_operator;
-				new_node->value.vector_constructor_info.first = comas + 1;
-			}
+				new_node = node::new_vector_contructor_operator(comas + 1, 0);
+				operators.push_back(new_node);
+			}		
 			else
 				error = "Constructed vector is too long";
 
-			operators.push_back(new_node);
+			
 		};
 
 		auto close_parenthesis = [&]()
@@ -249,7 +252,7 @@ namespace expressions_parsing_utilities
 
 			if (!found_left_parenthesis)
 				error = "Mismatched parentheses";
-			else if (previous->type == node_type::single_arg_left_parenthesis)
+			else if (previous->get_type() == node_type::left_parenthesis)
 			{
 				delete operators.back();
 				operators.pop_back();
@@ -288,7 +291,7 @@ namespace expressions_parsing_utilities
 			size_t operands_check_sum = 0;
 			for (auto& n : output)
 			{
-				switch (n->type)
+				switch (n->get_type())
 				{
 				case node_type::scalar_literal:
 				case node_type::symbol:
@@ -297,13 +300,13 @@ namespace expressions_parsing_utilities
 					operands_check_sum++;
 					break;
 				case node_type::function:
-					throw_error(operands_check_sum < n->value.function->second.arguments.size(), "Invalid expression");
-					operands_check_sum -= n->value.function->second.arguments.size();
+					throw_error(operands_check_sum < n->as_function()->second.arguments.size(), "Invalid expression");
+					operands_check_sum -= n->as_function()->second.arguments.size();
 					operands_check_sum++;
 					break;
 				case node_type::vector_contructor_operator:
-					throw_error(operands_check_sum < n->value.vector_constructor_info.first, "Invalid expression");
-					operands_check_sum -= n->value.vector_constructor_info.first;
+					throw_error(operands_check_sum < n->as_vector_contructor_operator().first, "Invalid expression");
+					operands_check_sum -= n->as_vector_contructor_operator().first;
 					operands_check_sum++;
 					break;
 				case node_type::binary_operator:
@@ -311,9 +314,9 @@ namespace expressions_parsing_utilities
 					operands_check_sum -= 2;
 					operands_check_sum++;
 					break;
-				case node_type::single_arg_left_parenthesis:
+				case node_type::left_parenthesis:
 				case node_type::unary_operator:
-				case node_type::vector_component_access:
+				case node_type::vector_component_access_operator:
 					throw_error(operands_check_sum < 1, "Invalid expression");
 					break;
 				}
@@ -400,24 +403,14 @@ namespace expressions_parsing_utilities
 			}
 			else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 			{
-				auto new_node = new node{};
-
-				new_node->type = node_type::unary_operator;
-				new_node->value.unary_operator = get_unary_operator(node_str);
-
+				auto new_node = node::new_unary_operator(get_unary_operator(node_str));
 				insert_operator(operators, output, new_node);
-
 				accepts_right_unary_operator = false;
 			}
 			else if (is_binary_operator(node_str))
 			{
-				auto new_node = new node{};
-
-				new_node->type = node_type::binary_operator;
-				new_node->value.binary_operator = get_binary_operator(node_str);
-
+				auto new_node = node::new_binary_operator(get_binary_operator(node_str));
 				insert_operator(operators, output, new_node);
-
 				accepts_right_unary_operator = true;
 			}
 			else if (node_str.at(0) == '(')
@@ -436,7 +429,7 @@ namespace expressions_parsing_utilities
 				handle_comma();
 				accepts_right_unary_operator = true;
 			}
-			else if (node_str.at(0) == '.' && output.size() != 0 && output.back()->type == node_type::library)
+			else if (node_str.at(0) == '.' && output.size() != 0 && output.back()->get_type() == node_type::library)
 			{
 				expecting_library_function = true;
 				continue;
@@ -458,10 +451,7 @@ namespace expressions_parsing_utilities
 					included_vector_components.push_back(itr->second);
 				}
 
-				auto new_node = new node{};
-				new_node->type = node_type::vector_component_access;
-				new_node->value.included_vector_components = std::move(included_vector_components);
-
+				auto new_node = node::new_vector_access_operator(included_vector_components);
 				accepts_right_unary_operator = false;
 				operators.push_back(new_node);
 			}
@@ -472,13 +462,8 @@ namespace expressions_parsing_utilities
 			else if (is_scalar_literal(node_str, error))
 			{
 				rethrow_error();
-
-				auto new_node = new node{};
-
-				new_node->type = node_type::scalar_literal;
-				new_node->value.scalar_value = node_str;
+				auto new_node = node::new_scalar_literal(node_str);
 				output.push_back(new_node);
-
 				accepts_right_unary_operator = false;
 			}
 			else if (node_str.at(0) == symbols_prefix)
@@ -492,13 +477,9 @@ namespace expressions_parsing_utilities
 				auto itr = domain->symbols.find(symbol_name);
 				throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
 
-				auto new_node = new node{};
-
-				new_node->type = node_type::symbol;
-				new_node->value.symbol = &(itr->second);
+				auto new_node = node::new_symbol(&(itr->second));
 
 				output.push_back(new_node);
-
 				accepts_right_unary_operator = false;
 			}
 			else if (is_function_call(source, iterator))
@@ -524,20 +505,24 @@ namespace expressions_parsing_utilities
 				if (expecting_library_function)
 				{
 					expecting_library_function = false;
-					itr = output.back()->value.library->functions.find(node_str);
-					throw_error(itr == output.back()->value.library->functions.end(), "No such function: " + std::string(node_str));
+					auto& library = output.back()->as_library();
+
+					itr = library->functions.find(node_str);
+					throw_error(itr == library->functions.end(), "No such function: " + std::string(node_str));
 					delete output.back();
 					output.pop_back();
 				}
 				else
 				{
 					itr = functions->find(node_str);
-					if (itr == functions->end())
+					if (itr == functions->end() && domain != nullptr)
 					{
 						//can be done since domain's functions will not be instanciated so their state is not going to change
 						itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
 						throw_error(itr == domain->functions.end(), "No such function: " + std::string(node_str));
 					}
+					else
+						throw_error(true, "No such function: " + std::string(node_str));
 				}
 
 				throw_error(!expecting_library_function && !itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
@@ -553,13 +538,8 @@ namespace expressions_parsing_utilities
 					"Cannot use function: " + std::string(node_str) + " because it is missing return statement"
 				);
 
-				auto new_node = new node{};
-
-				new_node->type = node_type::function;
-				new_node->value.function = &(*itr);
-
+				auto new_node = node::new_function(&(*itr));
 				insert_operator(operators, output, new_node);
-
 				accepts_right_unary_operator = true;
 			}
 			else
@@ -573,31 +553,19 @@ namespace expressions_parsing_utilities
 
 				if (itr != variables->end())
 				{
-					auto new_node = new node{};
-
-					new_node->type = node_type::variable;
-					new_node->value.variable = &(*itr);
-
+					auto new_node = node::new_variable(&(*itr));
 					output.push_back(new_node);
 					used_variables.push_back(&(*itr));
 
 					continue;
 				}
 
-				if (parameters != nullptr)
+				auto itr2 = parameters->find(node_str);
+				if (parameters != nullptr && itr2 != parameters->end())
 				{
-					auto itr2 = parameters->find(node_str);
-					if (itr2 != parameters->end())
-					{
-						auto new_node = new node{};
-
-						new_node->type = node_type::parameter;
-						new_node->value.parameter = &(*itr2);
-
-						output.push_back(new_node);
-
-						continue;
-					}
+					auto new_node = node::new_parameter(&(*itr2));
+					output.push_back(new_node);
+					continue;
 				}
 
 				//Check if library
@@ -605,12 +573,7 @@ namespace expressions_parsing_utilities
 				throw_error(itr3 == libraries->end(), "No such variable: " + std::string(node_str));
 
 				library_name = { node_str };
-
-				auto new_node = new node{};
-
-				new_node->type = node_type::library;
-				new_node->value.library = itr3->second;
-
+				auto new_node = node::new_library(itr3->second);
 				output.push_back(new_node);
 			}
 
@@ -717,14 +680,14 @@ namespace expressions_parsing_utilities
 
 			size_t vec_size = get_vector_size(type);
 
-			for (auto& comp : n->value.included_vector_components)
+			for (auto& comp : n->as_vector_access_operator())
 				if (comp > vec_size)
 				{
 					error = type->name + " does not have " + std::to_string(comp) + " dimensions";
 					return;
 				}
 
-			size_t new_vec_size = n->value.included_vector_components.size();
+			size_t new_vec_size = n->as_vector_access_operator().size();
 
 			pop_types(1);
 			types.push_back(get_vector_type_of_size(static_cast<uint8_t>(new_vec_size)));
@@ -732,8 +695,8 @@ namespace expressions_parsing_utilities
 
 		auto handle_vector_constructor = [&]()
 		{
-			const auto& vector_constructor_nodes = n->value.vector_constructor_info.first;
-			auto& created_vector_size = n->value.vector_constructor_info.second = 0;
+			const auto& vector_constructor_nodes = n->as_vector_contructor_operator().first;
+			auto& created_vector_size = n->as_vector_contructor_operator().second = 0;
 
 			for (int i = 0; i < vector_constructor_nodes; i++)
 			{
@@ -751,8 +714,8 @@ namespace expressions_parsing_utilities
 
 		auto handle_function = [&]()
 		{
-			auto& func_name = n->value.function->first;
-			auto& func_def = n->value.function->second;
+			auto& func_name = n->as_function()->first;
+			auto& func_def = n->as_function()->second;
 
 			std::vector<const data_type*> arguments_types;
 
@@ -807,13 +770,13 @@ namespace expressions_parsing_utilities
 			types.push_back(instance.returned_type);
 		};
 
-		switch (n->type)
+		switch (n->get_type())
 		{
 		case node::node_type::scalar_literal:
 			types.push_back(scalar_data_type); break;
 		case node::node_type::variable:
 		{
-			auto& var = n->value.variable;
+			auto var = n->as_variable();
 
 			throw_error(var->second.type == nullptr,
 				"Cannot use variable " + std::string(var->first) + " because it's type could not be discern");
@@ -823,7 +786,7 @@ namespace expressions_parsing_utilities
 		}
 		case node::node_type::parameter:
 		{
-			auto& param = n->value.parameter;
+			auto param = n->as_parameter();
 
 			throw_error(param->second.type == nullptr,
 				"Cannot use parameter " + std::string(param->first) + " because it's type could not be discern");
@@ -834,22 +797,22 @@ namespace expressions_parsing_utilities
 		case node::node_type::symbol:
 		{
 			throw_error(domain == nullptr, "Cannot use symbols since the domain is not specified yet");
-			types.push_back(n->value.symbol->type);
+			types.push_back(n->as_symbol()->type);
 			break;
 		}
 		case node::node_type::binary_operator:
 		{
-			handle_binary_operator(n->value.binary_operator);
+			handle_binary_operator(n->as_binary_operator());
 			rethrow_error();
 			break;
 		}
 		case node::node_type::unary_operator:
 		{
-			handle_unary_operator(n->value.unary_operator);
+			handle_unary_operator(n->as_unary_operator());
 			rethrow_error();
 			break;
 		}
-		case node::node_type::vector_component_access:
+		case node::node_type::vector_component_access_operator:
 		{
 			handle_vector_access();
 			rethrow_error();

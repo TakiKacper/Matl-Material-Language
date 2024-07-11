@@ -130,9 +130,10 @@ struct parsed_library;
 
 struct expression::node
 {
+public:
 	enum class node_type
 	{
-		single_arg_left_parenthesis,
+		left_parenthesis,
 		scalar_literal,
 		variable,
 		symbol,
@@ -140,37 +141,106 @@ struct expression::node
 		unary_operator,
 		binary_operator,
 		vector_contructor_operator,
-		vector_component_access,
+		vector_component_access_operator,
 		function,
 		library
-	} type;
+	};
 
-	union node_value
-	{
-		std::string												scalar_value;
-		const named_variable*									variable;
-		const symbol_definition*								symbol;
-		const named_parameter*									parameter;
-		const unary_operator_definition*						unary_operator;
-		const binary_operator_definition*						binary_operator;
-		std::pair<uint8_t, uint8_t>								vector_constructor_info;				//first is how many nodes build the vector, second is it's real size
-		std::vector<uint8_t>									included_vector_components;
-		std::pair<std::string, function_definition>*			function;
-		std::shared_ptr<parsed_library>							library;
-		//node_value() : variable(nullptr) {};
-		~node_value() {};
-	} value;
+private:
+	node_type type;
+	void* value;
 
-	//node() : value() {};
-	~node()
+public:
+	node(node_type&& _type, void* ptr) : type(std::move(_type)), value(std::move(ptr)) {};
+
+	inline node_type get_type() const noexcept
 	{
-		if (type == node_type::scalar_literal)
-			value.scalar_value.~basic_string();
-		else if (type == node_type::vector_contructor_operator)
-			value.vector_constructor_info.~pair();
-		else if (type == node_type::vector_component_access)
-			value.included_vector_components.~vector();
-	}
+		return type;
+	};
+
+	inline ~node()
+	{
+		auto type = get_type();
+
+		if (value == nullptr) return;
+
+		switch (type)
+		{
+		case expression::node::node_type::scalar_literal:
+			delete reinterpret_cast<std::string*>(value); break;		
+		case expression::node::node_type::vector_contructor_operator:
+			delete reinterpret_cast<std::pair<uint8_t, uint8_t>*>(value); break;
+		case expression::node::node_type::vector_component_access_operator:
+			delete reinterpret_cast<std::vector<uint8_t>*>(value); break;
+		case expression::node::node_type::library:
+			delete reinterpret_cast<std::shared_ptr<parsed_library>*>(value); break;
+		}
+	};
+
+
+	static inline node* new_left_parenthesis()
+	{return new node{ node_type::left_parenthesis, nullptr };}
+
+	static inline node* new_scalar_literal(const string_ref& literal)
+	{return new node{ node_type::scalar_literal, new std::string(literal) };}
+
+	static inline node* new_variable(const named_variable* variable)
+	{return new node{ node_type::variable, const_cast<named_variable*>(variable) };}
+
+	static inline node* new_symbol(const symbol_definition* symbol)
+	{return new node{ node_type::symbol, const_cast<symbol_definition*>(symbol) };}
+
+	static inline node* new_parameter(const named_parameter* parameter)
+	{return new node{ node_type::parameter, const_cast<named_parameter*>(parameter) };}
+
+	static inline node* new_unary_operator(const unary_operator_definition* operato)
+	{return new node{ node_type::unary_operator, const_cast<unary_operator_definition*>(operato) };}
+
+	static inline node* new_binary_operator(const binary_operator_definition* operato)
+	{return new node{ node_type::binary_operator, const_cast<binary_operator_definition*>(operato) };}
+
+	static inline node* new_vector_contructor_operator(uint8_t child_nodes, uint8_t vector_size)
+	{return new node{ node_type::vector_contructor_operator, new std::pair<uint8_t, uint8_t>{child_nodes, vector_size} };}
+
+	static inline node* new_vector_access_operator(std::vector<uint8_t>& components)
+	{return new node{ node_type::vector_component_access_operator, new std::vector<uint8_t>(std::move(components))}; }
+
+	static inline node* new_function(const named_function* function)
+	{return new node{ node_type::function, const_cast<named_function*>(function) };}
+
+	static inline node* new_library(const std::shared_ptr<parsed_library> library)
+	{return new node{ node_type::library,  new std::shared_ptr<parsed_library>{library} };}
+
+
+	inline std::string& as_scalar_literal() const
+	{return *reinterpret_cast<std::string*>(value);}
+
+	inline named_variable* as_variable() const
+	{return reinterpret_cast<named_variable*>(value);}
+
+	inline symbol_definition* as_symbol() const
+	{return reinterpret_cast<symbol_definition*>(value);}
+
+	inline named_parameter* as_parameter() const
+	{return reinterpret_cast<named_parameter*>(value);}
+
+	inline unary_operator_definition* as_unary_operator() const
+	{return reinterpret_cast<unary_operator_definition*>(value);}
+
+	inline binary_operator_definition* as_binary_operator() const
+	{return reinterpret_cast<binary_operator_definition*>(value);}
+
+	inline std::pair<uint8_t, uint8_t>& as_vector_contructor_operator() const
+	{return *reinterpret_cast<std::pair<uint8_t, uint8_t>*>(value);}
+
+	inline std::vector<uint8_t>& as_vector_access_operator() const
+	{return *reinterpret_cast<std::vector<uint8_t>*>(value);}
+
+	inline named_function* as_function() const
+	{return reinterpret_cast<named_function*>(value);}
+
+	inline std::shared_ptr<parsed_library>& as_library() const
+	{return *reinterpret_cast<std::shared_ptr<parsed_library>*>(value);}
 };
 
 expression::single_expression::~single_expression()
