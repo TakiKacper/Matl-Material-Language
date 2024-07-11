@@ -150,6 +150,9 @@ void domain_directives_handles::property(const std::string& source, context_publ
 		auto name = get_string_ref(source, state.iterator, error);
 		rethrow_error();
 
+		throw_error(state.domain->properties.find(name) != state.domain->properties.end(),
+			"Cannot use this name; Property named: " + std::string(name) + " already exists");
+
 		auto type = get_data_type(type_name);
 		if (type == nullptr) error = "No such type: " + std::string(type_name);
 
@@ -196,6 +199,9 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 	get_spaces(source, state.iterator);
 	auto name = get_string_ref(source, state.iterator, error);
 	rethrow_error();
+
+	throw_error(state.domain->symbols.find(name) != state.domain->symbols.end(),
+		"Cannot use this name; Property named: " + std::string(name) + " already exists");
 
 	get_spaces(source, state.iterator);
 	throw_error(source.at(state.iterator) != '=', "Expected '='");

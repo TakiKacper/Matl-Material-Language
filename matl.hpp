@@ -88,11 +88,41 @@ void get_used_functions_recursive(expression* exp, counting_set<function_instanc
 namespace handles_common
 {
 	template<class state_class>
-	void func(const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
+	void func(const string_ref& unique_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
 
 	template<class state_class>
 	void _return(const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
 }
+
+inline void is_name_unique(
+	const string_ref& name, 
+	const variables_collection* variables,
+	const decltype(parsed_domain::symbols)* symbols,
+	const parameters_collection* parameters,
+	const function_collection* functions,
+	const context_public_implementation& context,
+	const libraries_collection* libraries,
+	std::string& error
+)
+{
+	throw_error(variables != nullptr && variables->find(name) != variables->end(),
+		"Cannot use this name; Variable named: " + std::string(name) + " already exists");
+
+	throw_error(symbols != nullptr && symbols->find(name) != symbols->end(),
+		"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
+
+	throw_error(parameters != nullptr && parameters->find(name) != parameters->end(),
+		"Cannot use this name; Parameter named: " + std::string(name) + " already exists");
+	
+	throw_error(functions->find(name) != functions->end(),
+		"Cannot use this name; Function named: " + std::string(name) + " already exists");
+
+	throw_error(context.common_functions.find(name) != context.common_functions.end(),
+		"Cannot use this name; Function named: " + std::string(name) + " already exists");
+
+	throw_error(libraries != nullptr && libraries->find(name) != libraries->end(),
+		 "Cannot use this name; Library named: " + std::string(name) + " already exists");
+};
 
 #include "source/implementation/domain_parsing.hpp"
 #include "source/implementation/library_parsing.hpp"
@@ -225,21 +255,13 @@ void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_par
 }
 
 template<class state_class>
-void handles_common::func(const std::string& source, context_public_implementation& context, state_class& state, std::string& error)
+void handles_common::func(const string_ref& unique_function_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error)
 {
 	throw_error(state.function_body, "Cannot declare function inside another function");
 
 	auto& iterator = state.iterator;
 
-	get_spaces(source, iterator);
-	std::string name = get_string_ref(source, iterator, error);
-	throw_error(name == "", "Expected function name");
-
-	throw_error(state.functions.find(name) != state.functions.end(),
-		"Function named " + std::string(name) + " already exists");
-
-	get_spaces(source, iterator);
-
+	get_spaces(source, iterator); 
 	throw_error(is_at_source_end(source, iterator), "");
 	throw_error(source.at(iterator) != '(', "Expected (");
 
@@ -271,9 +293,9 @@ void handles_common::func(const std::string& source, context_public_implementati
 
 	throw_error(!is_at_line_end(source, iterator), "Expected line end");
 
-	auto& func_def = state.functions.insert({name, function_definition{}})->second;
+	auto& func_def = state.functions.insert({ unique_function_name, function_definition{}})->second;
 	func_def.arguments = std::move(arguments);
-	func_def.function_code_name = std::move(name);
+	func_def.function_code_name = std::move(unique_function_name);
 
 	for (auto& arg : func_def.arguments)
 		func_def.variables.insert({ arg, {} });

@@ -241,7 +241,6 @@ void library_keywords_handles::let
 
 	get_spaces(source, iterator);
 	auto var_name = get_string_ref(source, iterator, error);
-
 	rethrow_error();
 
 	if (var_name.at(0) == symbols_prefix)
@@ -257,11 +256,17 @@ void library_keywords_handles::let
 
 	auto& func_def = state.functions.recent().second;
 
-	throw_error(func_def.variables.find(var_name) != func_def.variables.end(),
-		"Variable named " + std::string(var_name) + " already exists");
-
-	throw_error(state.functions.find(var_name) != state.functions.end(),
-		"Function named " + std::string(var_name) + " already exists");
+	is_name_unique(
+		var_name, 
+		&func_def.variables, 
+		nullptr,
+		nullptr, 
+		&state.functions,
+		context,
+		&state.libraries, 
+		error
+	);
+	rethrow_error();
 
 	auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 	var_def.definition_line = state.line_counter;
@@ -349,10 +354,25 @@ void library_keywords_handles::_using
 void library_keywords_handles::func
 (const std::string& source, context_public_implementation& context, library_parsing_state& state, std::string& error)
 {
-	handles_common::func(source, context, state, error);
+	get_spaces(source, state.iterator);
+	std::string func_name = get_string_ref(source, state.iterator, error);
+	throw_error(func_name == "", "Expected function name");
 	rethrow_error();
 
-	state.functions.recent().second.library_name = state.library_name;
+	is_name_unique(
+		func_name,
+		nullptr,
+		nullptr,
+		nullptr,
+		&state.functions,
+		context,
+		&state.libraries,
+		error
+	);
+	rethrow_error();
+
+	handles_common::func(func_name, source, context, state, error);
+	rethrow_error();
 }
 
 void library_keywords_handles::_return

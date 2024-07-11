@@ -167,7 +167,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				uses_count <= 1 														//variables is used only once 
 				||																		//or
 				var->second.definition->equations.front()->value->nodes.size() == 1		//it is made of a single node
-				);
+			);
 	};
 
 	auto translate_variables = [&](counting_set<named_variable*>& variables)
@@ -313,6 +313,18 @@ void material_keywords_handles::let
 
 	throw_error(var_name.at(0) == symbols_prefix, "Cannot declare symbols in material");
 
+	is_name_unique(
+		var_name,
+		&state.variables,
+		&state.domain->symbols,
+		&state.parameters,
+		&state.functions,
+		context,
+		&state.libraries,
+		error
+	);
+	rethrow_error();
+
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
 
@@ -326,11 +338,17 @@ void material_keywords_handles::let
 
 	if (!state.function_body)
 	{
-		throw_error(state.variables.find(var_name) != state.variables.end(),
-			"Variable named " + std::string(var_name) + " already exists");
-
-		throw_error(state.parameters.find(var_name) != state.parameters.end(),
-			"Parameter named " + std::string(var_name) + " already exists");
+		is_name_unique(
+			var_name, 
+			&state.variables, 
+			&state.domain->symbols, 
+			&state.parameters, 
+			&state.functions, 
+			context,
+			&state.libraries, 
+			error
+		);
+		rethrow_error();
 
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
 		var_def.definition_line = state.line_counter;
@@ -357,8 +375,17 @@ void material_keywords_handles::let
 	{
 		auto& func_def = state.functions.recent().second;
 
-		throw_error(func_def.variables.find(var_name) != func_def.variables.end(),
-			"Variable named " + std::string(var_name) + " already exists");
+		is_name_unique(
+			var_name,
+			&func_def.variables,
+			nullptr,
+			nullptr,
+			&state.functions,
+			context,
+			&state.libraries,
+			error
+		);
+		rethrow_error();
 
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 		var_def.definition_line = state.line_counter;
@@ -470,11 +497,17 @@ void material_keywords_handles::_using
 		auto assign_operator = get_char(source, iterator);
 		throw_error(assign_operator != '=', "Expected '='");
 
-		throw_error(state.parameters.find(parameter_name) != state.parameters.end(),
-			"Parameter named " + std::string(parameter_name) + " already exists");
-
-		throw_error(state.variables.find(parameter_name) != state.variables.end(),
-			"Variable named " + std::string(parameter_name) + " already exists");
+		is_name_unique(
+			parameter_name,
+			&state.variables,
+			&state.domain->symbols,
+			&state.parameters,
+			&state.functions,
+			context,
+			&state.libraries,
+			error
+		);
+		rethrow_error();
 
 		state.parameters.insert({ parameter_name, {} });
 		auto& param_def = state.parameters.recent().second;
@@ -549,15 +582,25 @@ void material_keywords_handles::_using
 void material_keywords_handles::func
 (const std::string& source, context_public_implementation& context, material_parsing_state& state, std::string& error)
 {
-	handles_common::func(source, context, state, error);
+	get_spaces(source, state.iterator);
+	std::string func_name = get_string_ref(source, state.iterator, error);
+	throw_error(func_name == "", "Expected function name");
 	rethrow_error();
 
-	auto& name = state.functions.recent().first;
-	throw_error(state.variables.find(name) != state.variables.end(),
-		"Variable named " + std::string(name) + " already exists");
+	is_name_unique(
+		func_name,
+		&state.variables,
+		&state.domain->symbols,
+		&state.parameters,
+		&state.functions,
+		context,
+		&state.libraries,
+		error
+	);
+	rethrow_error();
 
-	throw_error(state.parameters.find(name) != state.parameters.end(),
-		"Parameter named " + std::string(name) + " already exists");
+	handles_common::func(func_name, source, context, state, error);
+	rethrow_error();
 }
 
 void material_keywords_handles::_return
