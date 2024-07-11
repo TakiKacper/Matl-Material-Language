@@ -151,10 +151,13 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto dump_property = [&](const directive& directive)
 	{
+		auto& property = state.properties.at(directive.payload.at(0));
+
 		material.sources.back() += '(';
 		material.sources.back() += translator->expression_translator(
-			state.properties.at(directive.payload.at(0)).definition,
-			&inlined
+			property.definition,
+			&inlined,
+			property.definition->used_functions
 		);
 		material.sources.back() += ')';
 	};
@@ -188,15 +191,20 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			{
 				inlined.insert({
 					(*itr)->first,
-					"(" + translator->expression_translator((*itr)->first->second.definition, &inlined) + ")"
-					});
+					"(" + translator->expression_translator(
+						(*itr)->first->second.definition, 
+						&inlined,
+						(*itr)->first->second.definition->used_functions)
+					+ ")"
+				});
 			}
 			else
 			{
 				material.sources.back() += translator->variables_declarations_translator(
 					(*itr)->first->first,
 					&(*itr)->first->second,
-					&inlined
+					&inlined,
+					(*itr)->first->second.definition->used_functions
 				);
 			}
 		};

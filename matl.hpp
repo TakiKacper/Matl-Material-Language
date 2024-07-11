@@ -295,7 +295,7 @@ void handles_common::func(const string_ref& unique_function_name, const std::str
 
 	auto& func_def = state.functions.insert({ unique_function_name, function_definition{}})->second;
 	func_def.arguments = std::move(arguments);
-	func_def.function_code_name = std::move(unique_function_name);
+	func_def.function_name_ptr = &state.functions.recent().first;
 
 	for (auto& arg : func_def.arguments)
 		func_def.variables.insert({ arg, {} });
