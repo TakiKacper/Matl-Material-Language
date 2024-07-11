@@ -106,8 +106,6 @@ void parse_library_implementation(
 		}
 	}
 
-	auto parsed = std::make_shared<parsed_library>();
-
 	library_parsing_state state;
 	state.parsed_libs_stack = stack;
 	state.library_name = library_name;
@@ -188,15 +186,19 @@ void parse_library_implementation(
 		get_to_new_line(library_source, state.iterator);
 	}
 
-	parsed->functions = std::move(state.functions);
-
 	matl::library_parsing_raport raport;
 	raport.library_name = library_name;
 
 	if (state.errors.size() == 0)
 	{
 		raport.success = true;
+		auto parsed = std::make_shared<parsed_library>();
+		parsed->functions = std::move(state.functions);
+
 		context->libraries.insert({ library_name, parsed });
+
+		for (auto& func : parsed->functions)
+			func.second.library = &context->libraries.recent();
 	}
 	else
 	{

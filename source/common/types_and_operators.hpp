@@ -291,13 +291,14 @@ struct function_instance
 	function_instance(function_definition* _function) : function(_function) {};
 };
 
+struct parsed_library;
 struct function_definition
 {
 	bool valid = true;
 	bool is_exposed = false;
 
 	std::string function_code_name;
-	std::string library_name;
+	std::pair<std::string, std::shared_ptr<parsed_library>>* library = nullptr;
 
 	std::vector<std::string> arguments;
 	variables_collection variables;
