@@ -275,6 +275,7 @@ void library_keywords_handles::let
 		nullptr,
 		&state.functions,
 		&state.libraries,
+		context,
 		nullptr,
 		error
 	);

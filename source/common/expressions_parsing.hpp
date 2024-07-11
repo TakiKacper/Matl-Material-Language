@@ -197,6 +197,7 @@ namespace expressions_parsing_utilities
 		parameters_collection* parameters,
 		function_collection* functions,
 		libraries_collection* libraries,
+		const context_public_implementation& context_impl,
 		std::shared_ptr<const parsed_domain> domain,
 		std::list<expression::equation*>& equations,
 		std::list<expression::node*>& output,
@@ -515,16 +516,23 @@ namespace expressions_parsing_utilities
 				else
 				{
 					itr = functions->find(node_str);
-					if (itr == functions->end() && domain != nullptr)
+					if (itr != functions->end()) goto _shunting_yard_process_function;
+
+					//those casts can be done since these functions will not be instanciated (since they are exposed) so their state is not going to change
+
+					if (domain != nullptr)
 					{
-						//can be done since domain's functions will not be instanciated so their state is not going to change
 						itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
-						throw_error(itr == domain->functions.end(), "No such function: " + std::string(node_str));
+						if (itr != domain->functions.end()) goto _shunting_yard_process_function;
 					}
-					else
-						throw_error(true, "No such function: " + std::string(node_str));
+
+					itr = const_cast<context_public_implementation&>(context_impl).common_functions.find(node_str);
+					if (itr != context_impl.common_functions.end()) goto _shunting_yard_process_function;
+
+					throw_error(true, "No such function: " + std::string(node_str));
 				}
 
+			_shunting_yard_process_function:
 				throw_error(!expecting_library_function && !itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
 				throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(library_name) + "." + std::string(node_str));	
 
@@ -844,6 +852,7 @@ expression* get_expression(
 	parameters_collection* parameters,
 	function_collection* functions,
 	libraries_collection* libraries,
+	const context_public_implementation& context,
 	std::shared_ptr<const parsed_domain> domain,	//optional, nullptr if symbols are not allowed
 	std::string& error
 )
@@ -864,6 +873,7 @@ expression* get_expression(
 		parameters,
 		functions,
 		libraries,
+		context,
 		domain,
 		equations,
 		output,

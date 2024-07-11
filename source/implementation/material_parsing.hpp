@@ -344,6 +344,7 @@ void material_keywords_handles::let
 			&state.parameters,
 			&state.functions,
 			&state.libraries,
+			context,
 			state.domain,
 			error
 		);
@@ -371,6 +372,7 @@ void material_keywords_handles::let
 			nullptr,
 			&state.functions,
 			&state.libraries,
+			context,
 			nullptr,
 			error
 		);
@@ -411,6 +413,7 @@ void material_keywords_handles::property
 		&state.parameters,
 		&state.functions,
 		&state.libraries,
+		context,
 		state.domain,
 		error
 	);

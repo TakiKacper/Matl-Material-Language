@@ -48,6 +48,12 @@ namespace matl
 		std::list<std::string> errors;
 	};
 
+	struct add_commonly_exposed_functions_raport
+	{
+		bool success = false;
+		std::list<std::string> errors;
+	};
+
 	using custom_using_case_callback = void(std::string args, std::string& error);
 	using dynamic_library_parse_request_handle = const std::string* (const std::string& lib_name, std::string& error);
 
@@ -72,6 +78,7 @@ private:
 
 public:
 	void add_domain_insertion(std::string name, std::string insertion);
+	add_commonly_exposed_functions_raport add_commonly_exposed_functions(const std::string& source);
 	void add_custom_using_case_callback(std::string _case, custom_using_case_callback callback);
 	void set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle);
 

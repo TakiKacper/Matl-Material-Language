@@ -103,6 +103,12 @@ public:
 		}
 	}
 
+	inline void insert(iterator begin, iterator end)
+	{
+		for (auto itr = begin; itr != end; itr++)
+			insert(*itr);
+	}
+
 	inline void remove(const _key& key)
 	{
 		for (const_iterator itr = begin(); itr != end(); itr++)

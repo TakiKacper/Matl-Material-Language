@@ -46,6 +46,8 @@ using inlined_variables = std::unordered_map<const named_variable*, std::string>
 
 struct context_public_implementation
 {
+	heterogeneous_map<std::string, function_definition, hgm_string_solver> common_functions;
+
 	heterogeneous_map<std::string, std::shared_ptr<parsed_domain>, hgm_string_solver> domains;
 	heterogeneous_map<std::string, std::string, hgm_string_solver> domain_insertions;
 
@@ -143,6 +145,80 @@ void matl::context::add_custom_using_case_callback(std::string _case, matl::cust
 		impl->impl.custom_using_handles.insert({ std::move(_case), callback });
 }
 
+matl::add_commonly_exposed_functions_raport matl::context::add_commonly_exposed_functions(const std::string& source)
+{
+	auto& context_impl = impl->impl;
+
+	domain_parsing_state state;
+	state.domain = std::make_shared<parsed_domain>();
+
+	auto& iterator = state.iterator;
+
+	size_t last_position = 0;
+	int line_counter = 1;
+
+	while (true)
+	{
+		std::string error;
+		bool whitespaces_only = true;
+
+		get_to_char_while_counting_lines('<', source, iterator, line_counter, whitespaces_only);
+
+		if (is_at_source_end(source, iterator)) break;
+
+		iterator++;
+
+		auto directive = get_string_ref(source, iterator, error);
+		if (error.size() != 0) goto _parse_domain_handle_error;
+
+		{
+		if (!(directive == "expose") && !(directive == "end") && !(directive == "function"))
+			state.errors.push_back('[' + std::to_string(line_counter) + "] Cannot use this directive here");
+
+		auto handle = directives_handles_map.find(directive);
+		if (handle == directives_handles_map.end())
+		{
+			error = "No such directive: " + std::string(directive);
+			get_to_char_while_counting_lines('>', source, iterator, line_counter, whitespaces_only);
+			goto _parse_domain_handle_error;
+		}
+		else
+		{
+			handle->second(source, impl->impl, state, error);
+			if (error != "") goto _parse_domain_handle_error;
+
+			get_spaces(source, state.iterator);
+			if (source.at(state.iterator) != '>')
+			{
+				error = "Expected directive end";
+				goto _parse_domain_handle_error;
+			}
+		}
+
+		get_to_char_while_counting_lines('>', source, iterator, line_counter, whitespaces_only);
+		iterator++;
+		last_position = iterator;
+
+		continue;
+		}
+	_parse_domain_handle_error:
+		state.errors.push_back('[' + std::to_string(line_counter) + "] " + std::move(error));
+		continue;
+	}
+
+	add_commonly_exposed_functions_raport raport;
+	raport.errors = std::move(state.errors);
+	raport.success = raport.errors.size() == 0;
+	
+	if (raport.success)
+		context_impl.common_functions.insert(
+			state.domain->functions.begin(), 
+			state.domain->functions.end()
+		);
+	
+	return raport;
+}
+
 void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle)
 {
 	impl->impl.dlprh = handle;
@@ -224,6 +300,7 @@ void handles_common::_return(const std::string& source, context_public_implement
 		nullptr,
 		&state.functions,
 		&state.libraries,
+		context,
 		nullptr,
 		error
 	);
