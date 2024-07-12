@@ -201,7 +201,7 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 	rethrow_error();
 
 	throw_error(state.domain->symbols.find(name) != state.domain->symbols.end(),
-		"Cannot use this name; Property named: " + std::string(name) + " already exists");
+		"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
 
 	get_spaces(source, state.iterator);
 	throw_error(source.at(state.iterator) != '=', "Expected '='");
