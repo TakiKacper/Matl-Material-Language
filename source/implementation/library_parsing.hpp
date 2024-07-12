@@ -245,9 +245,6 @@ void library_keywords_handles::let
 	auto var_name = get_string_ref(source, iterator, error);
 	rethrow_error();
 
-	if (var_name.at(0) == symbols_prefix)
-		error = "Cannot declare symbols in material";
-
 	get_spaces(source, iterator);
 	auto assign_operator = get_char(source, iterator);
 

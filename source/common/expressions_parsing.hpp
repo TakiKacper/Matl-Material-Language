@@ -329,6 +329,7 @@ namespace expressions_parsing_utilities
 
 		bool accepts_right_unary_operator = true;
 		bool expecting_library_function = false;
+		bool expecting_exposed = false;
 
 		string_ref library_name = { nullptr };
 
@@ -346,8 +347,10 @@ namespace expressions_parsing_utilities
 			if (node_str.at(0) == comment_char)
 				goto _shunting_yard_end;		//error for multline
 
-			size_t iterator2 = iterator;
-			throw_error(expecting_library_function && !is_function_call(source, iterator2), "Expected function call");
+			{
+				size_t iterator2 = iterator;
+				throw_error(expecting_library_function && !is_function_call(source, iterator2), "Expected function call");
+			}
 
 			if (node_str == "if")
 			{
@@ -389,17 +392,23 @@ namespace expressions_parsing_utilities
 					equations.push_back(new expression::equation{
 						new expression::single_expression(output),
 						nullptr
-						});
+					});
 				}
 				else
 				{
 					equations.push_back(new expression::equation{
 						nullptr,
 						nullptr
-						});
+					});
 				}
 
 				accepts_right_unary_operator = true;
+			}
+			else if (node_str == domain_exposed_access)
+			{
+				throw_error(domain == nullptr, "Cannot use domain here");
+				expecting_exposed = true;
+				accepts_right_unary_operator = false;
 			}
 			else if (is_unary_operator(node_str) && accepts_right_unary_operator)
 			{
@@ -455,6 +464,27 @@ namespace expressions_parsing_utilities
 				accepts_right_unary_operator = false;
 				operators.push_back(new_node);
 			}
+			else if (node_str.at(0) == '.' && expecting_exposed)
+			{
+				get_spaces(source, iterator);
+				auto symbol_name = get_string_ref(source, iterator, error);
+				rethrow_error();
+
+				if (is_function_call(source, iterator))
+				{
+					node_str = symbol_name;
+					goto _shunting_yard_function;
+				}
+
+				auto itr = domain->symbols.find(symbol_name);
+				throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
+
+				auto new_node = node::new_symbol(&(itr->second));
+
+				output.push_back(new_node);
+				accepts_right_unary_operator = false;
+				expecting_exposed = false;
+			}
 			else if (node_str.at(0) == '.')
 			{
 				throw_error(true, "Invalid expression");
@@ -466,24 +496,9 @@ namespace expressions_parsing_utilities
 				output.push_back(new_node);
 				accepts_right_unary_operator = false;
 			}
-			else if (node_str.at(0) == symbols_prefix)
-			{
-				throw_error(domain == nullptr, "Cannot use symbols here");
-
-				get_spaces(source, iterator);
-				auto symbol_name = get_string_ref(source, iterator, error);
-				rethrow_error();
-
-				auto itr = domain->symbols.find(symbol_name);
-				throw_error(itr == domain->symbols.end(), "No such symbol: " + std::string(symbol_name));
-
-				auto new_node = node::new_symbol(&(itr->second));
-
-				output.push_back(new_node);
-				accepts_right_unary_operator = false;
-			}
 			else if (is_function_call(source, iterator))
 			{
+			_shunting_yard_function:
 				throw_error(functions == nullptr, "Cannot use functions here");
 
 				int args_ammount = get_comas_inside_parenthesis(source, iterator - 1, error);
@@ -512,19 +527,21 @@ namespace expressions_parsing_utilities
 					delete output.back();
 					output.pop_back();
 				}
+				else if (expecting_exposed)
+				{
+					//this cast can be done since domain functions will not be instanciated 
+					//(since they are exposed) so their state is not going to change
+					expecting_exposed = false;
+
+					itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
+					if (itr != domain->functions.end()) goto _shunting_yard_process_function;
+				}
 				else
 				{
 					itr = functions->find(node_str);
 					if (itr != functions->end()) goto _shunting_yard_process_function;
 
-					//those casts can be done since these functions will not be instanciated (since they are exposed) so their state is not going to change
-
-					if (domain != nullptr)
-					{
-						itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
-						if (itr != domain->functions.end()) goto _shunting_yard_process_function;
-					}
-
+					//this one also is not going to be instanciated
 					itr = const_cast<context_public_implementation&>(context_impl).common_functions.find(node_str);
 					if (itr != context_impl.common_functions.end()) goto _shunting_yard_process_function;
 

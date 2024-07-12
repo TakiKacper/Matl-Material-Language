@@ -1,2 +1,3 @@
+#pragma once
 const char comment_char = '#';
-const char symbols_prefix = '$';
+const std::string domain_exposed_access = "domain";

@@ -106,6 +106,8 @@ inline void is_name_unique(
 	std::string& error
 )
 {
+	throw_error(name == domain_exposed_access, "Cannot use name: " + domain_exposed_access + "; It is reserved keyword");
+
 	throw_error(variables != nullptr && variables->find(name) != variables->end(),
 		"Cannot use this name; Variable named: " + std::string(name) + " already exists");
 

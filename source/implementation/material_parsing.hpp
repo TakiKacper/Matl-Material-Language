@@ -351,8 +351,6 @@ void material_keywords_handles::let
 	auto var_name = get_string_ref(source, iterator, error);
 	rethrow_error();
 
-	throw_error(var_name.at(0) == symbols_prefix, "Cannot declare symbols in material");
-
 	is_name_unique(
 		var_name,
 		&state.variables,
