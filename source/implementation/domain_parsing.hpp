@@ -8,6 +8,7 @@ struct domain_parsing_state
 	std::list<std::string> errors;
 
 	bool expose_scope = false;
+	bool redef_scope = false;
 	bool dump_properties_depedencies_scope = false;
 };
 
@@ -17,6 +18,7 @@ void(*)(const std::string& source, context_public_implementation& context, domai
 namespace domain_directives_handles
 {
 	void expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
+	void redef(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
 	void end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
 	void property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
 	void symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error);
@@ -29,6 +31,7 @@ heterogeneous_map<std::string, directive_handle, hgm_string_solver> directives_h
 {
 	{
 		{"expose",	 domain_directives_handles::expose},
+		{"redef",	 domain_directives_handles::redef},
 		{"end",		 domain_directives_handles::end},
 		{"property", domain_directives_handles::property},
 		{"symbol",	 domain_directives_handles::symbol},
@@ -126,20 +129,28 @@ matl::domain_parsing_raport matl::parse_domain(const std::string domain_name, co
 
 void domain_directives_handles::expose(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(state.expose_scope, "Cannot use this directive here");
-	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	throw_error(state.expose_scope || state.dump_properties_depedencies_scope || state.redef_scope, "Cannot use this directive here");
 	state.expose_scope = true;
+}
+
+void domain_directives_handles::redef(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
+{
+	throw_error(state.expose_scope || state.dump_properties_depedencies_scope || state.redef_scope, "Cannot use this directive here");
+	state.redef_scope = true;
 }
 
 void domain_directives_handles::end(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
-	throw_error(!state.expose_scope && !state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	throw_error(!state.expose_scope && !state.dump_properties_depedencies_scope && !state.redef_scope, "Cannot use this directive here");
 	state.expose_scope = false;
+	state.redef_scope = false;
 	state.dump_properties_depedencies_scope = false;
 }
 
 void domain_directives_handles::property(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
+	throw_error(state.redef_scope, "Cannot use this directive here");
+
 	if (state.expose_scope)
 	{
 		get_spaces(source, state.iterator);
@@ -187,7 +198,7 @@ void domain_directives_handles::property(const std::string& source, context_publ
 void domain_directives_handles::symbol(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
-	throw_error(!state.expose_scope, "Cannot use this directive here");
+	throw_error(!state.expose_scope && !state.redef_scope, "Cannot use this directive here");
 
 	get_spaces(source, state.iterator);
 	auto type_name = get_string_ref(source, state.iterator, error);
@@ -200,9 +211,6 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 	auto name = get_string_ref(source, state.iterator, error);
 	rethrow_error();
 
-	throw_error(state.domain->symbols.find(name) != state.domain->symbols.end(),
-		"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
-
 	get_spaces(source, state.iterator);
 	throw_error(source.at(state.iterator) != '=', "Expected '='");
 	state.iterator++;
@@ -212,7 +220,27 @@ void domain_directives_handles::symbol(const std::string& source, context_public
 	size_t begin = state.iterator;
 	get_to_char('>', source, state.iterator);
 
-	state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)} });
+	if (state.expose_scope)
+	{
+		throw_error(state.domain->symbols.find(name) != state.domain->symbols.end(),
+			"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
+
+		state.domain->symbols.insert({ name, {type, source.substr(begin, state.iterator - begin)} });
+	}
+	else if (state.redef_scope)
+	{
+		auto symbol = state.domain->symbols.find(name);
+
+		throw_error(symbol == state.domain->symbols.end(),
+			"No such symbol: " + std::string(name));
+
+		throw_error(type != symbol->second.type, "Cannot change symbol type");
+
+		symbol->second.definitions.push_back(source.substr(begin, state.iterator - begin));
+
+		state.domain->directives.push_back(
+			{ directive_type::change_symbol_definition, { std::move(name) } });
+	}
 }
 
 void domain_directives_handles::function(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
@@ -293,6 +321,7 @@ void domain_directives_handles::function(const std::string& source, context_publ
 void domain_directives_handles::dump(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.redef_scope, "Cannot use this directive here");
 	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
 
 	get_spaces(source, state.iterator);
@@ -330,6 +359,7 @@ void domain_directives_handles::dump(const std::string& source, context_public_i
 void domain_directives_handles::split(const std::string& source, context_public_implementation& context, domain_parsing_state& state, std::string& error)
 {
 	throw_error(state.expose_scope, "Cannot use this directive here");
+	throw_error(state.redef_scope, "Cannot use this directive here");
 	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
 
 	state.domain->directives.push_back({ directive_type::split, {} });

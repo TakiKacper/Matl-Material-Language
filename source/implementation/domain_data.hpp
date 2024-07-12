@@ -8,6 +8,7 @@ enum class directive_type
 	dump_functions,
 	dump_property,
 	dump_parameters,
+	change_symbol_definition,
 	split
 };
 
@@ -22,10 +23,10 @@ struct directive
 struct symbol_definition
 {
 	const data_type* type;
-	std::string definition;
+	std::vector<std::string> definitions;
 
 	symbol_definition(const data_type* _type, std::string _definition)
-		: type(_type), definition(_definition) {};
+		: type(_type), definitions({ _definition }) {};
 };
 
 struct parsed_domain

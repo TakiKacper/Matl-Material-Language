@@ -10,7 +10,8 @@ struct translator
 	using _expression_translator = std::string(*)(
 		const expression* const& exp,
 		const inlined_variables* inlined,
-		const std::vector<function_instance*>& functions_instances
+		const std::vector<function_instance*>& functions_instances,
+		const std::unordered_map<const symbol_definition*, size_t> current_symbols_definitions
 	);
 	const _expression_translator expression_translator;
 
@@ -18,7 +19,8 @@ struct translator
 		const string_ref& name,
 		const variable_definition* const& var,
 		const inlined_variables* inlined,
-		const std::vector<function_instance*>& functions_instances
+		const std::vector<function_instance*>& functions_instances,
+		const std::unordered_map<const symbol_definition*, size_t> current_symbols_definitions
 	);
 	const _variables_declarations_translator variables_declarations_translator;
 

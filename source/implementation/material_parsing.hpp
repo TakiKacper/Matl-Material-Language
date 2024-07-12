@@ -148,6 +148,10 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	auto& translator = context->impl->impl._translator;
 
 	inlined_variables inlined;
+	std::unordered_map<const symbol_definition*, size_t> current_symbols_definitions;
+
+	for (auto& symbol : state.domain->symbols)
+		current_symbols_definitions.insert({ &symbol.second, 0 });
 
 	auto dump_property = [&](const directive& directive)
 	{
@@ -157,7 +161,8 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		material.sources.back() += translator->expression_translator(
 			property.definition,
 			&inlined,
-			property.definition->used_functions.at(0)
+			property.definition->used_functions.at(0),
+			current_symbols_definitions
 		);
 		material.sources.back() += ')';
 	};
@@ -210,13 +215,13 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			{
 				inlined.insert({
 					(*var_itr)->first,
-					"(" + translator->expression_translator(variable.definition, &inlined, used_functions)+ ")"
+					"(" + translator->expression_translator(variable.definition, &inlined, used_functions, current_symbols_definitions)+ ")"
 				});
 			}
 			else
 			{
 				material.sources.back() += translator->variables_declarations_translator(
-					variable_name, &variable, &inlined, used_functions);
+					variable_name, &variable, &inlined, used_functions, current_symbols_definitions);
 			}
 		};
 	};
@@ -259,13 +264,14 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				{
 					function_inlined.insert({
 						(*var_itr)->first,
-						"(" + translator->expression_translator(variable.definition, &function_inlined, used_functions) + ")"
+						"(" + translator->expression_translator(
+							variable.definition, &function_inlined, used_functions, current_symbols_definitions) + ")"
 					});
 				}
 				else
 				{
 					material.sources.back() += translator->variables_declarations_translator(
-						variable_name, &variable, &function_inlined, used_functions);
+						variable_name, &variable, &function_inlined, used_functions, current_symbols_definitions);
 				}
 			};
 
@@ -296,10 +302,6 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		case directive_type::dump_insertion:
 			material.sources.back() += context_impl.domain_insertions.at(directive.payload.at(0));
 			break;
-		case directive_type::split:
-			material.sources.push_back("");
-			material.sources.back().reserve(preallocated_shader_memory);
-			break;
 		case directive_type::dump_property:
 			dump_property(directive);
 			break;
@@ -311,6 +313,15 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			break;
 		case directive_type::dump_parameters:
 			dump_parameters();
+			break;
+		case directive_type::split:
+			material.sources.push_back("");
+			material.sources.back().reserve(preallocated_shader_memory);
+			break;
+		case directive_type::change_symbol_definition:
+			auto& symbol_name = directive.payload.at(0);
+			auto symbol = &state.domain->symbols.at(symbol_name);
+			current_symbols_definitions.at(symbol)++;
 			break;
 		}
 	}
