@@ -35,7 +35,8 @@ struct translator
 
 	using _function_return_statement_translator = std::string(*)(
 		const function_instance* instance,
-		const inlined_variables& inlined
+		const inlined_variables& inlined,
+		const std::vector<function_instance*>& functions_instances
 	);
 	const _function_return_statement_translator function_return_statement_translator;
 

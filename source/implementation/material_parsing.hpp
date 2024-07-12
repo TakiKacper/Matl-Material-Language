@@ -173,7 +173,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			);
 	};
 
-	auto translate_variables = [&](counting_set<named_variable*>& variables)
+	auto sort_variables = [&](counting_set<named_variable*>& variables)
 	{
 		std::vector<std::pair<named_variable*, uint32_t>*> order;
 
@@ -185,29 +185,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				return a->first->second.definition_line < b->first->second.definition_line;
 			});
 
-		for (auto itr = order.begin(); itr != order.end(); itr++)
-		{
-			if (should_inline_variable((*itr)->first, (*itr)->second))
-			{
-				inlined.insert({
-					(*itr)->first,
-					"(" + translator->expression_translator(
-						(*itr)->first->second.definition, 
-						&inlined,
-						(*itr)->first->second.definition->used_functions)
-					+ ")"
-				});
-			}
-			else
-			{
-				material.sources.back() += translator->variables_declarations_translator(
-					(*itr)->first->first,
-					&(*itr)->first->second,
-					&inlined,
-					(*itr)->first->second.definition->used_functions
-				);
-			}
-		};
+		return order;
 	};
 
 	auto dump_variables = [&](const directive& directive)
@@ -220,7 +198,31 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			get_used_variables_recursive(prop_exp, variables);
 		}
 
-		translate_variables(variables);
+		auto order = sort_variables(variables);
+
+		for (auto itr = order.begin(); itr != order.end(); itr++)
+		{
+			if (should_inline_variable((*itr)->first, (*itr)->second))
+			{
+				inlined.insert({
+					(*itr)->first,
+					"(" + translator->expression_translator(
+						(*itr)->first->second.definition,
+						&inlined,
+						(*itr)->first->second.definition->used_functions)
+					+ ")"
+					});
+			}
+			else
+			{
+				material.sources.back() += translator->variables_declarations_translator(
+					(*itr)->first->first,
+					&(*itr)->first->second,
+					&inlined,
+					(*itr)->first->second.definition->used_functions
+				);
+			}
+		};
 	};
 
 	auto dump_functions = [&](const directive& directive)
@@ -235,14 +237,70 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		for (auto itr = functions.begin(); itr != functions.end(); itr++)
 		{
+			inlined_variables function_inlined;
+
 			if ((*itr).first->function->is_exposed) continue;
 
 			counting_set<named_variable*> variables;
 			get_used_variables_recursive(itr->first->function->returned_value, variables);
 
 			material.sources.back() += translator->function_header_translator(itr->first);
-			translate_variables(variables);
-			material.sources.back() += translator->function_return_statement_translator(itr->first, inlined);
+			
+			size_t instance_index = 0;
+			auto instances_itr = itr->first->function->instances.begin();
+			while (&*instances_itr != itr->first)
+			{
+				instances_itr++; instance_index++;
+			}
+
+			auto order = sort_variables(variables);
+
+			for (auto itr2 = order.begin(); itr2 != order.end(); itr2++)
+			{
+				auto& used_functions = (*itr2)->first->second.definition->used_functions;
+				std::vector<function_instance*> used_functions_subset;
+
+				size_t block_size = used_functions.size() / itr->first->function->instances.size();
+
+				used_functions_subset.insert(
+					used_functions_subset.begin(),
+					used_functions.begin() + instance_index * block_size,
+					used_functions.begin() + instance_index * block_size + block_size
+				);
+
+				if (should_inline_variable((*itr2)->first, (*itr2)->second))
+				{
+					function_inlined.insert({
+						(*itr2)->first,
+						"(" + translator->expression_translator(
+							(*itr2)->first->second.definition,
+							&function_inlined,
+							used_functions_subset
+						) + ")"
+					});
+				}
+				else
+				{
+					material.sources.back() += translator->variables_declarations_translator(
+						(*itr2)->first->first,
+						&(*itr2)->first->second,
+						&function_inlined,
+						used_functions_subset
+					);
+				}
+			};
+
+			auto& used_functions = itr->first->function->returned_value->used_functions;
+			std::vector<function_instance*> used_functions_subset;
+
+			size_t block_size = used_functions.size() / itr->first->function->instances.size();
+
+			used_functions_subset.insert(
+				used_functions_subset.begin(),
+				used_functions.begin() + instance_index * block_size,
+				used_functions.begin() + instance_index * block_size + block_size
+			);
+			material.sources.back() += translator->function_return_statement_translator(itr->first, function_inlined, used_functions_subset);
 		}
 	};
 
