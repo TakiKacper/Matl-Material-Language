@@ -151,10 +151,13 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 	auto dump_property = [&](const directive& directive)
 	{
+		auto& property = state.properties.at(directive.payload.at(0));
+
 		material.sources.back() += '(';
 		material.sources.back() += translator->expression_translator(
-			state.properties.at(directive.payload.at(0)).definition,
-			&inlined
+			property.definition,
+			&inlined,
+			property.definition->used_functions.at(0)
 		);
 		material.sources.back() += ')';
 	};
@@ -170,7 +173,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			);
 	};
 
-	auto translate_variables = [&](counting_set<named_variable*>& variables)
+	auto sort_variables = [&](counting_set<named_variable*>& variables)
 	{
 		std::vector<std::pair<named_variable*, uint32_t>*> order;
 
@@ -182,24 +185,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 				return a->first->second.definition_line < b->first->second.definition_line;
 			});
 
-		for (auto itr = order.begin(); itr != order.end(); itr++)
-		{
-			if (should_inline_variable((*itr)->first, (*itr)->second))
-			{
-				inlined.insert({
-					(*itr)->first,
-					"(" + translator->expression_translator((*itr)->first->second.definition, &inlined) + ")"
-					});
-			}
-			else
-			{
-				material.sources.back() += translator->variables_declarations_translator(
-					(*itr)->first->first,
-					&(*itr)->first->second,
-					&inlined
-				);
-			}
-		};
+		return order;
 	};
 
 	auto dump_variables = [&](const directive& directive)
@@ -212,7 +198,27 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			get_used_variables_recursive(prop_exp, variables);
 		}
 
-		translate_variables(variables);
+		auto order = sort_variables(variables);
+
+		for (auto var_itr = order.begin(); var_itr != order.end(); var_itr++)
+		{
+			auto& variable_name = (*var_itr)->first->first;
+			auto& variable = (*var_itr)->first->second;
+			auto& used_functions = variable.definition->used_functions.at(0);
+
+			if (should_inline_variable((*var_itr)->first, (*var_itr)->second))
+			{
+				inlined.insert({
+					(*var_itr)->first,
+					"(" + translator->expression_translator(variable.definition, &inlined, used_functions)+ ")"
+				});
+			}
+			else
+			{
+				material.sources.back() += translator->variables_declarations_translator(
+					variable_name, &variable, &inlined, used_functions);
+			}
+		};
 	};
 
 	auto dump_functions = [&](const directive& directive)
@@ -225,16 +231,50 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			get_used_functions_recursive(prop_exp, functions);
 		}
 
-		for (auto itr = functions.begin(); itr != functions.end(); itr++)
+		for (auto func_itr = functions.begin(); func_itr != functions.end(); func_itr++)
 		{
-			if ((*itr).first->function->is_exposed) continue;
+			inlined_variables function_inlined;
+			size_t instance_index = 0;
+
+			auto instances_itr = func_itr->first->function->instances.begin();
+			while (&*instances_itr != func_itr->first)
+				{ instances_itr++; instance_index++; }
+
+			if ((*func_itr).first->function->is_exposed) continue;
 
 			counting_set<named_variable*> variables;
-			get_used_variables_recursive(itr->first->function->returned_value, variables);
+			get_used_variables_recursive(func_itr->first->function->returned_value, variables);
 
-			material.sources.back() += translator->function_header_translator(itr->first);
-			translate_variables(variables);
-			material.sources.back() += translator->function_return_statement_translator(itr->first, inlined);
+			material.sources.back() += translator->function_header_translator(func_itr->first);
+
+			auto order = sort_variables(variables);
+
+			for (auto var_itr = order.begin(); var_itr != order.end(); var_itr++)
+			{
+				auto& variable_name = (*var_itr)->first->first;
+				auto& variable = (*var_itr)->first->second;
+				auto& used_functions = (*var_itr)->first->second.definition->used_functions.at(instance_index);
+
+				if (should_inline_variable((*var_itr)->first, (*var_itr)->second))
+				{
+					function_inlined.insert({
+						(*var_itr)->first,
+						"(" + translator->expression_translator(variable.definition, &function_inlined, used_functions) + ")"
+					});
+				}
+				else
+				{
+					material.sources.back() += translator->variables_declarations_translator(
+						variable_name, &variable, &function_inlined, used_functions);
+				}
+			};
+
+			auto& used_functions = func_itr->first->function->returned_value->used_functions;
+			material.sources.back() += translator->function_return_statement_translator(
+				func_itr->first, 
+				function_inlined, 
+				used_functions.at(instance_index)
+			);
 		}
 	};
 

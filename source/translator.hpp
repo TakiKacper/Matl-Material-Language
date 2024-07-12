@@ -9,14 +9,16 @@ struct translator
 {
 	using _expression_translator = std::string(*)(
 		const expression* const& exp,
-		const inlined_variables* inlined
+		const inlined_variables* inlined,
+		const std::vector<function_instance*>& functions_instances
 	);
 	const _expression_translator expression_translator;
 
 	using _variables_declarations_translator = std::string(*)(
 		const string_ref& name,
 		const variable_definition* const& var,
-		const inlined_variables* inlined
+		const inlined_variables* inlined,
+		const std::vector<function_instance*>& functions_instances
 	);
 	const _variables_declarations_translator variables_declarations_translator;
 
@@ -33,7 +35,8 @@ struct translator
 
 	using _function_return_statement_translator = std::string(*)(
 		const function_instance* instance,
-		const inlined_variables& inlined
+		const inlined_variables& inlined,
+		const std::vector<function_instance*>& functions_instances
 	);
 	const _function_return_statement_translator function_return_statement_translator;
 

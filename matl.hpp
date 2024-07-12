@@ -77,7 +77,8 @@ void get_used_variables_recursive(const expression* exp, counting_set<named_vari
 void get_used_functions_recursive(expression* exp, counting_set<function_instance*>& to_dump)
 {
 	for (auto& func : exp->used_functions)
-		to_dump.insert(func);
+		for (auto& f : func)
+			to_dump.insert(f);
 
 	for (auto& func : exp->used_variables)
 		get_used_functions_recursive(func->second.definition, to_dump);
@@ -241,10 +242,17 @@ matl::add_commonly_exposed_functions_raport matl::context::add_commonly_exposed_
 	raport.success = raport.errors.size() == 0;
 	
 	if (raport.success)
+	{
 		context_impl.common_functions.insert(
-			state.domain->functions.begin(), 
+			state.domain->functions.begin(),
 			state.domain->functions.end()
 		);
+
+		for (auto& func : context_impl.common_functions)
+			for (auto& instance : func.second.instances)
+				instance.function = &func.second;
+	}
+		
 	
 	return raport;
 }
@@ -295,7 +303,7 @@ void handles_common::func(const string_ref& unique_function_name, const std::str
 
 	auto& func_def = state.functions.insert({ unique_function_name, function_definition{}})->second;
 	func_def.arguments = std::move(arguments);
-	func_def.function_code_name = std::move(unique_function_name);
+	func_def.function_name_ptr = &state.functions.recent().first;
 
 	for (auto& arg : func_def.arguments)
 		func_def.variables.insert({ arg, {} });

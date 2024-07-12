@@ -111,12 +111,12 @@ struct expression
 	std::list<equation*> equations;
 
 	std::vector<named_variable*> used_variables;
-	std::vector<function_instance*> used_functions;
+	std::vector<std::vector<function_instance*>> used_functions;
 
 	expression(
 		std::list<equation*>& _equations,
 		std::vector<named_variable*>& _used_variables,
-		std::vector<function_instance*>& _used_functions
+		std::vector<std::vector<function_instance*>> _used_functions
 	) :
 		equations(std::move(_equations)),
 		used_variables(std::move(_used_variables)),
@@ -275,6 +275,13 @@ struct function_instance
 {
 	const function_definition* function;
 
+	//If function is exposed it's name may be aliased 
+	//and this field contains it's real, native name to be 
+	//used when translating into target language
+	//When function is a normal matl function then this 
+	//field have no real meaning
+	std::string function_native_name;
+
 	bool valid;
 	const data_type* returned_type;
 	std::vector<const data_type*> arguments_types;
@@ -297,7 +304,7 @@ struct function_definition
 	bool valid = true;
 	bool is_exposed = false;
 
-	std::string function_code_name;
+	std::string* function_name_ptr;
 	std::pair<std::string, std::shared_ptr<parsed_library>>* library = nullptr;
 
 	std::vector<std::string> arguments;

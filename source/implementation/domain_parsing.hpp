@@ -273,7 +273,6 @@ void domain_directives_handles::function(const std::string& source, context_publ
 		for (int i = 0; i < arguments_types.size(); i++)
 			func_def.arguments.push_back("_d" + std::to_string(i));
 
-		func_def.function_code_name = function_native_name;
 		func_def.valid = true;
 		func_def.returned_value = nullptr;
 		func_def.variables = {};
@@ -283,6 +282,7 @@ void domain_directives_handles::function(const std::string& source, context_publ
 	func_def.instances.push_back({ &func_def });
 	auto& func_instance = func_def.instances.back();
 
+	func_instance.function_native_name = function_native_name;
 	func_instance.returned_type = returned_type;
 	func_instance.arguments_types = std::move(arguments_types);
 	func_instance.valid = true;
