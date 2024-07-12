@@ -287,6 +287,9 @@ struct function_instance
 	std::vector<const data_type*> arguments_types;
 	std::vector<const data_type*> variables_types;
 
+	//cache translated function for future parse_material calls
+	std::string translated;
+
 	bool args_matching(const std::vector<const data_type*>& args) const
 	{
 		for (size_t i = 0; i < arguments_types.size(); i++)

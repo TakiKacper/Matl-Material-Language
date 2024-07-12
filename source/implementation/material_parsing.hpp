@@ -238,7 +238,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		for (auto func_itr = functions.begin(); func_itr != functions.end(); func_itr++)
 		{
-			inlined_variables function_inlined;
+			inlined_variables inlined_function_vars;
 			size_t instance_index = 0;
 
 			auto instances_itr = func_itr->first->function->instances.begin();
@@ -247,10 +247,19 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 			if ((*func_itr).first->function->is_exposed) continue;
 
+			auto& function_traslation = (*func_itr).first->translated;
+
+			if (function_traslation.size() != 0)
+			{
+				material.sources.back() += (*func_itr).first->translated;
+				continue;
+			}
+			function_traslation.reserve(512);
+
 			counting_set<named_variable*> variables;
 			get_used_variables_recursive(func_itr->first->function->returned_value, variables);
 
-			material.sources.back() += translator->function_header_translator(func_itr->first);
+			function_traslation += translator->function_header_translator(func_itr->first);
 
 			auto order = sort_variables(variables);
 
@@ -262,25 +271,27 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 				if (should_inline_variable((*var_itr)->first, (*var_itr)->second))
 				{
-					function_inlined.insert({
+					inlined_function_vars.insert({
 						(*var_itr)->first,
 						"(" + translator->expression_translator(
-							variable.definition, &function_inlined, used_functions, current_symbols_definitions) + ")"
+							variable.definition, &inlined_function_vars, used_functions, current_symbols_definitions) + ")"
 					});
 				}
 				else
 				{
-					material.sources.back() += translator->variables_declarations_translator(
-						variable_name, &variable, &function_inlined, used_functions, current_symbols_definitions);
+					function_traslation += translator->variables_declarations_translator(
+						variable_name, &variable, &inlined_function_vars, used_functions, current_symbols_definitions);
 				}
 			};
 
 			auto& used_functions = func_itr->first->function->returned_value->used_functions;
-			material.sources.back() += translator->function_return_statement_translator(
+			function_traslation += translator->function_return_statement_translator(
 				func_itr->first, 
-				function_inlined, 
+				inlined_function_vars, 
 				used_functions.at(instance_index)
 			);
+
+			material.sources.back() += function_traslation;
 		}
 	};
 
