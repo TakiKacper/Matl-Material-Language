@@ -111,12 +111,12 @@ struct expression
 	std::list<equation*> equations;
 
 	std::vector<named_variable*> used_variables;
-	std::vector<function_instance*> used_functions;
+	std::vector<std::vector<function_instance*>> used_functions;
 
 	expression(
 		std::list<equation*>& _equations,
 		std::vector<named_variable*>& _used_variables,
-		std::vector<function_instance*>& _used_functions
+		std::vector<std::vector<function_instance*>> _used_functions
 	) :
 		equations(std::move(_equations)),
 		used_variables(std::move(_used_variables)),

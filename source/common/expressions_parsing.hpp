@@ -203,7 +203,6 @@ namespace expressions_parsing_utilities
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::vector<named_variable*>& used_variables,
-		std::vector<function_instance*>& used_functions,
 		std::string& error
 	)
 	{
@@ -750,7 +749,7 @@ namespace expressions_parsing_utilities
 					pop_types(func_def.arguments.size());
 					types.push_back(func_instance.returned_type);
 
-					exp->used_functions.push_back(&func_instance);
+					exp->used_functions.back().push_back(&func_instance);
 
 					return;
 				}
@@ -766,7 +765,7 @@ namespace expressions_parsing_utilities
 				error
 			);
 
-			exp->used_functions.push_back(&func_def.instances.back());
+			exp->used_functions.back().push_back(&func_def.instances.back());
 
 			if (error != "")
 				error = invalid_arguments_error() + '\n' + error;
@@ -879,7 +878,6 @@ expression* get_expression(
 		output,
 		operators,
 		used_vars,
-		used_funcs,
 		error
 	);
 
@@ -897,7 +895,7 @@ expression* get_expression(
 		return nullptr;
 	}
 
-	return new expression(equations, used_vars, used_funcs);
+	return new expression(equations, used_vars, {});
 }
 
 const data_type* validate_expression(
@@ -910,6 +908,8 @@ const data_type* validate_expression(
 	using data_type = data_type;
 
 	std::vector<const data_type*> types;
+
+	exp->used_functions.push_back({});
 
 	auto validate_literal_expression = [&](const expression::single_expression* le) -> const data_type*
 	{
