@@ -1,6 +1,5 @@
 # MATL - Material Language  
-Matl is a simple language for programming materials, such as those in unreal engine, blender or unity - it allows for abstraction between shader code and user's logic. Matl's header-only parser can be easily integrated into your engine / app. 
-This repo only provides translation into opengl GLSL, but it is really simple to implement translators for other languages.
+Matl is a simple language for programming materials, such as those in unreal engine, blender or unity - it allows for abstraction between shader code and user's logic. Using it parser, matl can be easily translated into proper shaders (this repo for now only support translation into opengl's glsl, but it is very simple to implement translators for other languages).
 
 Matl uses very simple, rust and python based syntax making it very easy to understand:
 ```javascript
