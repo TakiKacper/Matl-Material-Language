@@ -3,7 +3,7 @@ Integrating matl with Your engine is a pretty easy ask, thanks to it's simple ap
 
 ## Contents
 - [Building](#Building)
-- [Minimal matl integration step by step][#Minimal-matl-integration-step-by-step]
+- [Minimal matl integration step by step](#Minimal-matl-integration-step-by-step)
   - [Creating Context](#Creating-context)
   - [Parsing Domains](#Parsing-domains)
   - [Parsing Materials](#Creating-context)
