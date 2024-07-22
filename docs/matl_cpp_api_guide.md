@@ -11,6 +11,8 @@ Integrating matl with Your engine is a pretty easy task, thanks to it's simple a
   - [Minimal Example](#Minimal-Example)
 - [Implementing rest of matl features](#Implementing-rest-of-matl-features)
   - [Parsing Libraries](#Parsing-Libraries)
+  - [Using Domain Insertions](#Using-Domain-Insertions)
+  - [Custom Using Case](#Custom-Using-Case)
 
 ## Building  
 Building matl is similar to compiling single-header library, except you must include several files: matl parser (matl.hpp) and translators.
@@ -215,12 +217,13 @@ func snap_to_grid(point, grid_size)
 </details>
 
 Once library is parsed, it is saved inside ``context`` and can be used by every material via ``using library (name)``.  
-Parsing simple library as one above is pretty straightforward:
+Parsing simple library as one the above is pretty straightforward:
 
 ```cpp
-matl::library_parsing_raport lpr = matl::parse_library("my_library", library_source, context);
+std::list<matl::library_parsing_raport> lprs = matl::parse_library("my_library", library_source, context);
 ```
-Above code will work, but eventually we will run into a problem, when library wants to use another library that is not already loaded.
+But this only work for simple libraries that does not use other libraries.   
+With more complex ones we will eventually run into a problem, when library wants to use another library that is not already loaded.
  ```rust
 using library lerp_impl	# lerp_impl might not be in the context yet!
 
@@ -250,12 +253,60 @@ The callback functions takes two arguments:
 
 Pay attention that Matl parser does not take the ownership of the memory - you must store and release it on your own.
 
-After that 
+Return value of ``matl::parse_library`` is diffrent from other parse functions - it returns a list of raports instead of a single one. 
+This is because of fact that due to ability to request libraries sources, ``parse_library`` might actually parse more than one lib at one call.
 
+```cpp
+std::list<matl::library_parsing_raport>
+```
+<details>
+	<summary>library parsing raport definition: </summary>
 
+```cpp
+struct library_parsing_raport
+{
+	//Whether parsing was successful and there are no errors
+	bool success = false;
 
+	//Parsed library name
+	std::string library_name;
 
+	//Parsing errors
+	std::list<std::string> errors;
+};
+```
+</details>
 
+### Using Domain Insertions
+Insertions are code snippets that can be pasted into the shader code during it's assembly.  
+They can be saved inside context using following code:  
+```cpp
+context->add_domain_insertion("vertex_layout", "layout (location = 0) in vec2 aPos; [...]")
+```
+The first arg is insertion name and the second is it's content.  
+Once saved insertion can be pasted into the shader using following domain directive:
+```
+<dump insertion vertex_layout>
+```
+
+### Custom Using Case
+Matl allows user to add their own ``using`` keyword overload. This can be done from c++ by using context's ``add_custom_using_case_callback`` method:
+```cpp
+void using_print(std::string args, std::string& error)
+{
+	std::cout << "PRINT: \"" + args << "\"\n";
+}
+
+context->add_custom_using_case_callback("print", using_print);
+```
+The first arg of ``add_custom_using_case_callback`` is the word that should result in a callback.
+The second arg is of course the callback function, which takes rest of the line as the args argument, and reference to the error string that can be used to pass an error message.  
+
+With above setup, when matl parser come across
+```
+using print a b cde fg
+```
+It will call to ``using_print`` with ``args = "a b cde fg"``.
 
 
 
