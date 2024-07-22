@@ -1,5 +1,5 @@
 # Matl Api
-Integrating matl with Your engine is a pretty easy ask, thanks to it's simple api.
+Integrating matl with Your engine is a pretty easy task, thanks to it's simple api.
 
 ## Contents
 - [Building](#Building)
@@ -10,7 +10,7 @@ Integrating matl with Your engine is a pretty easy ask, thanks to it's simple ap
   - [Destroying Context](#Destroying-Context)
   - [Minimal Example](#Minimal-Example)
 - [Implementing rest of matl features](#Implementing-rest-of-matl-features)
-  - [
+  - [Parsing Libraries](#Parsing-Libraries)
 
 ## Building  
 Building matl is similar to compiling single-header library, except you must include several files: matl parser (matl.hpp) and translators.
@@ -198,12 +198,59 @@ int main()
 </details>
 
 
+## Implementing rest of matl features
+### Parsing Libraries
+Libraries are matl files that simply contains matl functions.
+<details>
+<summary>Example library: </summary>
+	
+ ```rust
+func lerp(y0, y1, alpha)
+	return y0 + (y1 - y0) * alpha
 
+func snap_to_grid(point, grid_size)
+	return floor(point / grid_size) * grid_size
+```
 
+</details>
 
+Once library is parsed, it is saved inside ``context`` and can be used by every material via ``using library (name)``.  
+Parsing simple library as one above is pretty straightforward:
 
+```cpp
+matl::library_parsing_raport lpr = matl::parse_library("my_library", library_source, context);
+```
+Above code will work, but eventually we will run into a problem, when library wants to use another library that is not already loaded.
+ ```rust
+using library lerp_impl	# lerp_impl might not be in the context yet!
 
+func lerp(y0, y1, alpha)
+	return lerp_impl.lerp(y0, y1, alpha)
+```
+The soultion is to provide a context callback function that will allow matl parser to request source of missing library from the client.
+```cpp
+std::list<std::string> buffer;
+const std::string* lib_source_request(const std::string& name, std::string& error)
+{
+	buffer.push_back(get_file(name + ".matl"));
+	return &buffer.back();
+}
 
+//Need to be set only once
+context->set_library_source_request_callback(lib_source_request);
+
+(...)
+
+matl::library_parsing_raport lpr = matl::parse_library("my_library", library_source, context);
+```
+Now, when parser does not have required library it will just call to ``lib_source_request`` for it.
+The callback functions takes two arguments:
+1. Requested library name - in above example it would be lerp_impl
+2. Error - an error message - use if your application cannot find or access given library source
+
+Pay attention that Matl parser does not take the ownership of the memory - you must store and release it on your own.
+
+After that 
 
 
 
