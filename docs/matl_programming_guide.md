@@ -149,7 +149,26 @@ Parameters can be accesed in expressions by their names:
 [parameter name]
 ```
 
+**Conditions**  
+  
+Variables can be assigned diffrent values varying on conditions, using ``if`` and ``else``.
+```js
+let a = 3.14
+let condition = a > 6.28
+
+let b = if condition : a * 3
+        if a == 3.14 : 13
+        else           12
+```
 
 
+
+
+
+
+
+
+
+  
 
 
