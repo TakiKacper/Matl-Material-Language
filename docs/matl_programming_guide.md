@@ -160,7 +160,18 @@ let b = if condition : a * 3
         if a == 3.14 : 13
         else           12
 ```
-
+if using condtions, ``if`` must be the very first token after ``=``. Such code is not allowed:
+```js
+let b = 2 * (if condition : a * 3  # error
+             if a == 3.14 : 13
+             else           12)
+```
+You can have as many if's as you want, but note that there must always be an ``else`` case.  
+Also note that all the cases must return the same data type. Such code is not allowed:
+```js
+let b = if condition : 2          # error
+        else           (2, 2)     # error
+```
 
 
 
