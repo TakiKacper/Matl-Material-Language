@@ -58,7 +58,8 @@ using parameter [name] = [default value]    : creates parameter                 
 (the game engine/library You are using can provide extra ones - see its docs)
 
 ### Expressions
-```python
+For mathematical expressions matl uses syntax similar to almost every other programming lanugage:
+```js
 let a = 2 * lerp(1, 2, 0.5)
 ```
 
@@ -102,9 +103,19 @@ z or b : third component
 w or a : fourth component
 ```
 
+Functions can be called with following syntax:
+```
+lerp(0.4, 1, 0.5)
+```
+The return type will be deduced from the function equations.  
 
+Vectors can be constructed using parentheses and comas:
+```js
+let v1 = (1, 2, 3, 4)
 
-
+let a = 3
+let v2 = (a, a, a)
+```
 
 
 
