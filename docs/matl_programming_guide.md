@@ -1,11 +1,27 @@
 # Programming in Matl
-## File types
+## Contents
+TODO
+## Boring Reference
+### File types
 In matl there are two types of files:  
-1. Materials  
-2. Libraries  
-The first one does provides values for properties of some domain, and results in a fully functional shader code, while the later one can only be used to store functions.
+```yaml
+Materials   :  provides values for properties of some domain and is translated into a fully functional shader code
+Libraries   :  can only be used to store functions
+```
 
-## Scopes
+### Data Types
+There are 6 data types in matl:
+```yaml
+bool      :   logical value, true or false
+scalar    :   mathematical scalar, eg. 3.14, 2, 1024.64
+vector2   :   mathematical vector with 2 dimensions
+vector3   :   mathematical vector with 3 dimensions
+vector4   :   mathematical vector with 4 dimensions
+texture   :   2 dimensional texture
+```
+Metal is strongly typed and does not provide any implicit or explicit types conversions.
+
+### Scopes
 ```python
 using domain my_domain            # Material scope
 
@@ -24,12 +40,63 @@ function    :  between func keyword and return keyword including return (require
 ```  
 Depending on where the code is located other keywords are available.
 
-## Keywords
+### Keywords
 Matl has only 5 keywords
 ```yaml
 let [variable name] = [expression]                        : creates variable                                     (available in material and functions scopes)
 property [property name] = [expression]                   : specify math equation for given property             (available in material scope)
-func [function name] ( [arg1 name] , [arg2 name] , ... )  : creates function, opens the function scope           (available in material and library scope)
+func [function name] ( [arg1 name] , [arg2 name] , ... )  : creates function, opens the function scope           (available in material and library scopes)
 return [expression]                                       : returns value from function, end the function scope  (available in function scope)
-using [case] [arguments]                                  : do magic                                             (available in material scope)
+using [case] [arguments]                                  : do case dependant things                             (available in material and library scopes)
 ```
+using keyword have 3 builtin cases:
+```yaml
+using domain [name]                         : loads the domain - since this line material can use property keyword (available in materials)
+using library [name]                        : links library so it can be used in this material/library             (available in materials and libraries)
+using parameter [name] = [default value]    : creates parameter                                                    (available in materials)
+```
+(the game engine/library You are using can provide extra ones - see its docs)
+
+### Expressions
+```python
+let a = 2 * lerp(1, 2, 0.5)
+```
+
+In matl there are 5 arythmetic operators: 
+```yaml
+- : negation        (allowed:    -scalar, -vectorN)
++ : addition        (allowed:    scalar + scalar, vectorN + vectorN, vectorN + scalar, commutative)
+- : subtraction     (allowed:    scalar - scalar, vectorN - vectorN, vectorN - scalar)
+* : multiplication  (allowed:    scalar * scalar, vectorN * vectorN, vectorN * scalar, commutative)
+/ : division        (allowed:    scalar / scalar, vectorN / vectorN, vectorN / scalar)
+```
+In all cases the result is the "bigger" type eg. scalar * vector3 returns in vector3.
+Note you cannot multiply vectors of diffrent sizes.
+
+There are also 10 logical operators:
+```yaml
+not : negation                (allowed: bool)
+and : coniunction             (allowed: bool and bool)
+or  : alternative             (allowed: bool or bool)
+xor : exclusive alternative   (allowed: bool xor bool)
+==  : equality                (allowed: bool == bool, scalar == scalar)
+!=  : not equaity             (allowed: bool != bool, scalar != scalar)
+<   : less                    (allowed: scalar < scalar)
+>   : greater                 (allowed: scalar > scalar)
+<=  : less or equal           (allowed: scalar > scalar)
+>=  : greater or equal        (allowed: scalar > scalar)
+```
+All of those return bool as result.
+
+
+
+
+
+
+
+
+
+
+
+
+
