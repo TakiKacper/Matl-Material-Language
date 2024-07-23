@@ -316,11 +316,11 @@ void library_keywords_handles::_using
 		auto itr = context.libraries.find(library_name);
 		throw_error(itr == context.libraries.end(), "No such library: " + std::string(library_name));
 
-		if (itr == context.libraries.end() && context.dlprh != nullptr)
+		if (itr == context.libraries.end() && context.lsr != nullptr)
 		{
 			error = "";
 
-			const std::string* nested_lib_source = context.dlprh(library_name, error);
+			const std::string* nested_lib_source = context.lsr(library_name, error);
 			rethrow_error();
 			throw_error(nested_lib_source == nullptr, "No such library: " + std::string(library_name));
 
