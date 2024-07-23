@@ -104,7 +104,7 @@ w or a : fourth component
 ```
 
 Functions can be called with following syntax:
-```
+```js
 lerp(0.4, 1, 0.5)
 ```
 The return type will be deduced from the function equations.  
