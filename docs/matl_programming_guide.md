@@ -6,6 +6,8 @@
     - [Scopes](#Scopes)
     - [Keywords](#Keywords)
     - [Expressions](#Expressions)
+- [Writing Materials](#Writing-Materials)
+- [Writing Libraries](#Writing-Libraries)
 
 ## Boring Reference
 ### File types
@@ -173,13 +175,16 @@ let b = if condition : 2          # error
         else           (2, 2)     # error
 ```
 
+## Writing Materials
+There is not many to cover in this topic, when the domains are unknown.  
+See if your engine does provide an documentation about materials scripting.
+Here is a list of requirements that material must met:
+```yaml
+1 : Domain must be included (using domain [...])
+2 : All properties of the given domain must be specified with property keyword
+3 : There must be no errors
+```
+Once the material met all the rules it can be translated into a proper shader and send to the gpu.
 
-
-
-
-
-
-
-  
-
-
+## Writing Libraries
+Just dump your functions into a file. See if your engine does have any other requirements
