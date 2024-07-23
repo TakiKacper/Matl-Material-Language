@@ -128,6 +128,10 @@ Domain's symbols can be accessed using following:
 ```js
 domain.[symbol name]
 ```
+Parameters can be accesed in expressions by their names:
+```js
+[parameter name]
+```
 
 
 
