@@ -1,6 +1,12 @@
 # Programming in Matl
 ## Contents
-TODO
+- [Boring Reference](#Boring-Reference)
+    - [File types](#File-types)
+    - [Data types](#Data-types)
+    - [Scopes](#Scopes)
+    - [Keywords](#Keywords)
+    - [Expressions](#Expressions)
+
 ## Boring Reference
 ### File types
 In matl there are two types of files:  
