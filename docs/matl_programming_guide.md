@@ -69,6 +69,8 @@ For mathematical expressions matl uses syntax similar to almost every other prog
 let a = 2 * lerp(1, 2, 0.5)
 ```
 
+**Arythmetic operators** 
+  
 In matl there are 5 arythmetic operators: 
 ```yaml
 - : negation        (allowed:    -scalar, -vectorN)
@@ -80,6 +82,8 @@ In matl there are 5 arythmetic operators:
 In all cases the result is the "bigger" type eg. scalar * vector3 returns in vector3.
 Note you cannot multiply vectors of diffrent sizes.
 
+**Logical operators**  
+  
 There are also 10 logical operators:
 ```yaml
 not : negation                (allowed: bool)
@@ -95,12 +99,15 @@ xor : exclusive alternative   (allowed: bool xor bool)
 ```
 All of those return bool as result.
 
+**Accessing vectors components**  
+  
 Programmer can access given vector components using following syntax:
 ```python
 some_vec_4.g     # returns a scalar, the second vector component
 some_vec_4.rgb   # return a vector3, the three first vector components
 some_vec_4.brag  # returns a vector4 with the components of the oryginal vector in given order
 ```
+
 Components names:
 ```yaml
 x or r : first component
@@ -109,13 +116,8 @@ z or b : third component
 w or a : fourth component
 ```
 
-Functions can be called with following syntax:
-```js
-lerp(0.4, 1, 0.5)
-library.lerp(0.4, 1, 0.5)
-```
-The return type will be deduced from the function equations.  
-
+**Constructing vectors**  
+  
 Vectors can be constructed using parentheses and comas:
 ```js
 let v1 = (1, 2, 3, 4)
@@ -124,14 +126,29 @@ let a = 3
 let v2 = (a, a, a)
 ```
 
+**Functions**  
+  
+Functions can be called with following syntax:
+```js
+lerp(0.4, 1, 0.5)
+library.lerp(0.4, 1, 0.5)
+```
+The return type will be deduced from the function equations.  
+
+**Symbols**  
+  
 Domain's symbols can be accessed using following:
 ```js
 domain.[symbol name]
 ```
+
+**Parameters** 
+  
 Parameters can be accesed in expressions by their names:
 ```js
 [parameter name]
 ```
+
 
 
 
