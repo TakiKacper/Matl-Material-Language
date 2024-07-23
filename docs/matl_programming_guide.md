@@ -88,10 +88,19 @@ xor : exclusive alternative   (allowed: bool xor bool)
 ```
 All of those return bool as result.
 
-
-
-
-
+Programmer can access given vector components using following syntax:
+```python
+some_vec_4.g     # returns a scalar, the second vector component
+some_vec_4.rgb   # return a vector3, the three first vector components
+some_vec_4.brag  # returns a vector4 with the components of the oryginal vector in given order
+```
+Components names:
+```yaml
+x or r : first component
+y or g : second component
+z or b : third component
+w or a : fourth component
+```
 
 
 
