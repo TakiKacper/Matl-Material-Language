@@ -83,6 +83,7 @@ void main()
 {
     FragColor = <property color>
 ```
+Now, when material uses our domain it must provide value or equation for each of these properties.
 
 ## Adding dump spots
 Matl besides properties also provides variables and functions. We need to put appropriate directives so the translator know where to put their definitions.
@@ -102,13 +103,48 @@ void main()
 
 [...]
 ```
+(Do this also for color)  
+
 We used to blocks: ``<dump functions>`` and ``<dump variables>``. In their places the translator will put the definitions of functions and variables.
-Inside those blocks is a place for properties list; only functions and variables that are used by listed properties will be dumped.
+Inside those blocks is a place for properties list; only functions and variables that are used by listed properties will be dumped:
+```python
+func useless_func()
+    return 12         #not used, will not be dumped
 
+func pi_func()
+    return 3.14       #used, will be dumped
 
+let pi = pi_func()    #used, will be dumped
+property vertex_offset = (pi, pi)
+```
+You should always provide <dump ...> so they cover all properties - otherwise, you may end with a shader throwing unresolved symbol error on compilation.
 
+## Dump Parameters
+Parameters are additional uniforms/constants (name vary between languages and APIs) that are created from materials code.
+```cpp
+using property alpha = 0.5
+```
+Using ``<dump properites>`` we can mark a spot, when the translator should insert their definitions.
+In glsl it should be done between ``#version`` and ``void main()``:
+```
+```glsl
+<dump functions>
+    <property vertex_offset>
+<end>
 
+<dump properties>
 
+void main()
+{  
+    <dump variables>
+        <property vertex_offset>
+    <end>
+
+    gl_Position = vec4(aPos + <property vertex_offset>, 0, 1);
+
+[...]
+```
+Note that matl functions are transparent (they cannot use properties and domain's symbols) so it is fine to place ``<dump properties>`` after ``<dump functions>``.
 
 
 
