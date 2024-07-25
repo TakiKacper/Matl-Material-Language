@@ -235,3 +235,48 @@ Insertions are code snippets that can be pasted into the shader code during it's
 
 This feature can be used to avoid repetion of for instance lighting functions, or vertex layouts.
 Note that even if the insertion contains some matl directives, they will not be parsed.
+
+## Directives syntaxes
+```yaml
+end    : <end>
+```
+```yaml
+expose : <expose>
+```
+```yaml
+redef : <redef>
+```
+```yaml
+property in expose : <property [type name] [property name]
+property in dump   : <property [property name]>
+to dump property   : <property [property name]>
+```
+```yaml
+dump variables  : <dump variables>
+dump functions  : <dump functions>
+dump parameters : <dump parameters>
+dump insertion  : <dump insertion>
+```
+```yaml
+split : <split>
+```
+```yaml
+symbol in expose : <symbol [type name] [symbol name] = [definition]>
+symbol in redef  : <symbol [type name] [symbol name] = [definition]>
+```
+```yaml
+function in expose : <function [matl name] = [returned type type name] [native name] ( [argument_type_name_1] , [argument_type_name_2] , ... )>
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
