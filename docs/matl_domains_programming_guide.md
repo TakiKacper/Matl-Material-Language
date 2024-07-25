@@ -124,8 +124,8 @@ Parameters are additional uniforms/constants (name vary between languages and AP
 ```cpp
 using property alpha = 0.5
 ```
-Using ``<dump properites>`` we can mark a spot, when the translator should insert their definitions.
-In glsl it should be done between ``#version`` and ``void main()``:
+Using ``<dump properites>`` we can mark a spot, when the translator should insert their definitions.  
+In glsl it should be done between ``#version`` and ``void main()``:  
 ```
 ```glsl
 <dump functions>
@@ -146,7 +146,23 @@ void main()
 ```
 Note that matl functions are transparent (they cannot use properties and domain's symbols) so it is fine to place ``<dump properties>`` after ``<dump functions>``.
 
+## Spliting Shader
+In opengl it is required to compile vertex shader, fragment shader and optionaly geometry shader in separate compile calls. That implies that the shader source must be splited into 2 or 3 respectively. 
+We can achieve that using the ``<split>`` directive. When translator come across it, it ends writing to provious source, and creates another for the rest of the shader.
+```glsl
+    TexCoord = aTexCoord;
+}    
+//End of vertex shader
 
+<split>
+
+//Next source begin
+
+#version 330 core    
+out vec4 FragColor;
+```
+Now, matl api function ``matl::parse_material`` will return ``matl::parsed_material`` with not one, but two sources when parsing material using this domain.  
+``<split>`` can be of course used as many times as you want.
 
 
 
