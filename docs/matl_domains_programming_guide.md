@@ -1,6 +1,6 @@
 # Domain programming
 
-## Creating Domain
+## Creating simple domain
 First thing is create a base shader in the expected language. Lets look at this example glsl shader:  
 
 ```glsl
@@ -162,6 +162,67 @@ out vec4 FragColor;
 ```
 Now, matl api function ``matl::parse_material`` will return ``matl::parsed_material`` with not one, but two sources when parsing material using this domain.  
 ``<split>`` can be of course used as many times as you want.
+
+## You now have a fully functional domain
+This domain is complete, but there more things you can add.
+
+## Exposing Symbols
+Symbols are variables / constant that are, opposite to properties, passed from domain to material.
+```glsl
+<expose>
+    <symbol     vector2    world_position = aPos>
+<end>
+```
+The code above create symbol ``world_position`` of type ``vector2`` that will be translated into ``aPos``.  
+Now it can be used inside the material, like this:
+```js
+let scaled = domain.world_position * 3.14.
+```
+
+
+Note that symbols are only preprocessor tool; what's written on left of the ``=`` is not checked.  
+It is domain programmer resposibility to ensure that the symbols definitions are valid at the time of use i.e. ``<dump property x>`` and ``<dump variables> [...]``.  
+  
+Of course not all variables available for a shader are available for the next one, eg. variable created in vertex shader may not exist with the same name in fragment (pixel) shader.
+The solutions is to use ``<redef>`` block:
+```glsl
+<redef>
+    <symbol     vector2    world_position = aPos2>
+<end>
+```
+When translator come across this directive it will switch ``world_position`` definition from ``aPos`` to ``aPos2``.
+Note that ``<redef>`` cannot change type of existing symbols, and cannot create new ones.
+
+## Exposing Functions
+Exposing functions is similar to exposing symbols:
+```glsl
+<expose>
+    <function   xyz = scalar lerp(scalar, scalar, scalar)>
+<end>
+```
+The code above created function ``xyz`` that is than translated into the ``lerp`` function, which is builtin glsl function (of course, using user-definied functions also work, but user must ensure that those functions exist at the time of use). The ``xyz`` function is now 
+Now ``xyz`` can be used in material like that:
+```js
+let c = domain.xyz(1, 2, 0.5)
+```
+Exposed functions, unlike matl functions, are not templates and cannot be used for other sets of types that those provided. Therefore it is allowed to provide multiple overloads for the same function:
+```glsl
+<expose>
+    <function   xyz = scalar lerp(scalar, scalar, scalar)>
+    <function   xyz = vector2 lerp(vector2, vector2, vector2)>
+<end>
+```
+Now ``xyz`` can be used both for 3x scalar arguments and for 3x vector2 arguments. Also the return types are diffrent.  
+The thing to note is that each overload must take the same amount of arguments.   
+
+Functions unlike symbols cannot by redefinied with ``<redef>``.
+
+
+
+
+
+
+
 
 
 
