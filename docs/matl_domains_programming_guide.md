@@ -181,7 +181,7 @@ let scaled = domain.world_position * 3.14.
 
 
 Note that symbols are only preprocessor tool; what's written on left of the ``=`` is not checked.  
-It is domain programmer resposibility to ensure that the symbols definitions are valid at the time of use i.e. ``<dump property x>`` and ``<dump variables> [...]``.  
+It is domain programmer resposibility to ensure that the symbols definitions are valid at the time of use i.e. ``<property x>`` and ``<dump variables> [...]``.  
   
 Of course not all variables available for a shader are available for the next one, eg. variable created in vertex shader may not exist with the same name in fragment (pixel) shader.
 The solutions is to use ``<redef>`` block:
