@@ -1,4 +1,14 @@
 # Domain programming
+## Contents
+- [Creating simple domain](#Creating-simple-domain)
+  - [Adding properties](#Adding-properties)
+  - [Adding dump spots](#Adding-dump-spots)
+  - [Dumping parameters](#Dumping-parameters)
+  - [Spliting Shader](#Spliting-shader)
+- [Additional features](#Additional-features)
+  - [Exposing Symbols](#Exposing-symbols)
+  - [Exposing Functions](#Exposing-functions)
+  - [Insertions](#Insertions)
 
 ## Creating simple domain
 First thing is create a base shader in the expected language. Lets look at this example glsl shader:  
@@ -38,7 +48,7 @@ property color = sample(my_domain.texture, my_domain.texture_coords)
 property vertex_offset = (0, 0)
 ```
 
-## Adding Properties
+### Adding properties
 Domain must be one source, so we will put both vertex and fragment shader in the same file. 
 There is an option to put a breakpoint between sources in the domain but more on that later.  
   
@@ -84,7 +94,7 @@ void main()
 ```
 Now, when material uses our domain it must provide value or equation for each of these properties.
 
-## Adding dump spots
+### Adding dump spots
 Matl besides properties also provides variables and functions. We need to put appropriate directives so the translator know where to put their definitions.
 
 ```glsl
@@ -118,7 +128,7 @@ property vertex_offset = (pi, pi)
 ```
 You should always provide <dump ...> so they cover all properties - otherwise, you may end with a shader throwing unresolved symbol error on compilation.
 
-## Dump Parameters
+### Dumping parameters
 Parameters are additional uniforms/constants (name vary between languages and APIs) that are created from materials code.
 ```cpp
 using property alpha = 0.5
@@ -145,7 +155,7 @@ void main()
 ```
 Note that matl functions are transparent (they cannot use properties and domain's symbols) so it is fine to place ``<dump properties>`` after ``<dump functions>``.
 
-## Spliting Shader
+### Spliting shader
 In opengl it is required to compile vertex shader, fragment shader and optionaly geometry shader in separate compile calls. That implies that the shader source must be splited into 2 or 3 respectively. 
 We can achieve that using the ``<split>`` directive. When translator come across it, it ends writing to provious source, and creates another for the rest of the shader.
 ```glsl
@@ -163,10 +173,10 @@ out vec4 FragColor;
 Now, matl api function ``matl::parse_material`` will return ``matl::parsed_material`` with not one, but two sources when parsing material using this domain.  
 ``<split>`` can be of course used as many times as you want.
 
-## You now have a fully functional domain
-This domain is complete, but there more things you can add.
+## Additional features
+In previous chapter we created fully functional domain, but there are still more features to discuss.
 
-## Exposing Symbols
+### Exposing symbols
 Symbols are variables / constant that are, opposite to properties, passed from domain to material.
 ```glsl
 <expose>
@@ -178,7 +188,6 @@ Now it can be used inside the material, like this:
 ```js
 let scaled = domain.world_position * 3.14.
 ```
-
 
 Note that symbols are only preprocessor tool; what's written on left of the ``=`` is not checked.  
 It is domain programmer resposibility to ensure that the symbols definitions are valid at the time of use i.e. ``<property x>`` and ``<dump variables> [...]``.  
@@ -193,7 +202,7 @@ The solutions is to use ``<redef>`` block:
 When translator come across this directive it will switch ``world_position`` definition from ``aPos`` to ``aPos2``.
 Note that ``<redef>`` cannot change type of existing symbols, and cannot create new ones.
 
-## Exposing Functions
+### Exposing Functions
 Exposing functions is similar to exposing symbols:
 ```glsl
 <expose>
@@ -217,12 +226,12 @@ The thing to note is that each overload must take the same amount of arguments.
 
 Functions unlike symbols cannot by redefinied with ``<redef>``.
 
+### Insertions
+Insertions are code snippets that can be pasted into the shader code during it's assembly. They are declared inside engine/appliation (see matl api guide for more info) and can be dumped into shaders code with following directive
 
+```
+<dump insertion [name]> //The contents of insertion will be dumped here.
+```
 
-
-
-
-
-
-
-
+This feature can be used to avoid repetion of for instance lighting functions, or vertex layouts.
+Note that even if the insertion contains some matl directives, they will not be parsed.
