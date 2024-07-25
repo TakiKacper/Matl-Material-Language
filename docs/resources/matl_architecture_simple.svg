@@ -7,8 +7,31 @@
    viewBox="0 0 160 90"
    version="1.1"
    id="svg1"
+   sodipodi:docname="matl_architecture_simple.svg"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm"
+     inkscape:zoom="1.512919"
+     inkscape:cx="315.94554"
+     inkscape:cy="153.67644"
+     inkscape:window-width="1920"
+     inkscape:window-height="1027"
+     inkscape:window-x="1912"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
   <defs
      id="defs1">
     <rect
@@ -21,312 +44,310 @@
   <g
      id="layer1">
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect4"
        width="38.777977"
        height="77.913353"
        x="5.361011"
        y="5.539711" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect5"
        width="39.314079"
        height="19.120937"
        x="58.881767"
        y="5.5050387" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect6"
        width="39.671478"
        height="18.763536"
        x="58.703068"
        y="34.097099" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect7"
        width="40.207581"
        height="18.942238"
        x="58.435017"
        y="63.761356" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect5-6"
        width="39.314079"
        height="19.120937"
        x="114.07378"
        y="5.5050387" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect6-9"
        width="39.671478"
        height="18.763536"
        x="113.8951"
        y="34.097099" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect7-6"
        width="40.207581"
        height="18.942238"
        x="113.62703"
        y="63.761356" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.221793"
+       style="fill:#4d4d4d;stroke-width:0.221793"
        id="rect8-2"
        width="6.5707321"
        height="2.4008443"
        x="48.292274"
        y="42.278446" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.193641"
+       style="fill:#4d4d4d;stroke-width:0.193641"
        id="rect9-6"
        width="2.148124"
        height="6.9395289"
        x="50.503578"
        y="40.009102" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.221793"
+       style="fill:#4d4d4d;stroke-width:0.221793"
        id="rect8-2-9"
        width="6.5707321"
        height="2.4008443"
        x="48.292274"
        y="13.865086" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.193641"
+       style="fill:#4d4d4d;stroke-width:0.193641"
        id="rect9-6-6"
        width="2.148124"
        height="6.9395289"
        x="50.503578"
        y="11.595743" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.221793"
+       style="fill:#4d4d4d;stroke-width:0.221793"
        id="rect8-2-9-8"
        width="6.5707321"
        height="2.4008443"
        x="48.292274"
        y="72.032051" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.193641"
+       style="fill:#4d4d4d;stroke-width:0.193641"
        id="rect9-6-6-5"
        width="2.148124"
        height="6.9395289"
        x="50.503578"
        y="69.762711" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect9"
        width="7.9405494"
        height="2.9868121"
        x="101.26022"
        y="13.572102" />
     <path
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        d="m 111.39369,15.334448 c -3.96395,-3.238973 -3.95225,-3.238973 -3.95225,-3.238973 v 5.940065 z"
        id="path10" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect9-0"
        width="7.9405494"
        height="2.9868121"
        x="101.40187"
        y="41.985462" />
     <path
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        d="m 111.51033,43.595606 c -3.96395,-3.238973 -3.95225,-3.238973 -3.95225,-3.238973 v 5.940065 z"
        id="path10-3" />
     <rect
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        id="rect9-0-2"
        width="7.9405494"
        height="2.9868121"
        x="101.31653"
        y="71.739067" />
     <path
-       style="fill:#d5dcd2;stroke-width:0.264583"
+       style="fill:#4d4d4d;stroke-width:0.264583"
        d="m 111.22205,73.370566 c -3.96395,-3.238973 -3.95225,-3.238973 -3.95225,-3.238973 v 5.940065 z"
        id="path10-3-2" />
     <text
        xml:space="preserve"
        transform="scale(0.26458333)"
        id="text10"
-       style="white-space:pre;shape-inside:url(#rect10);display:inline;fill:#d5dcd2"><tspan
+       style="white-space:pre;shape-inside:url(#rect10);display:inline;fill:#e6e6e6;stroke:#f9f9f9"><tspan
          x="32.164062"
          y="47.498745"
-         id="tspan2"><tspan
-           style="fill:#000000"
-           id="tspan1">Domain</tspan></tspan></text>
+         id="tspan3">Domain</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="10.95998"
        y="17.407026"
        id="text11"><tspan
          id="tspan11"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="10.95998"
          y="17.407026">Properties:</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="13.023034"
        y="21.662075"
        id="text12"><tspan
          id="tspan12"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="21.662075">Base color</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="25.630825"
          id="tspan15">Metailic</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="29.599575"
          id="tspan13">Specularity</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="33.568325"
          id="tspan16">Roughness</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="37.537075"
          id="tspan17">[...]</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="13.023034"
          y="41.505825"
          id="tspan14" /></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="60.03051"
        y="9.1025696"
        id="text18"><tspan
          id="tspan18"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="60.03051"
          y="9.1025696">Plastic Material</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="63.895515"
        y="14.054562"
        id="text19"><tspan
          id="tspan19"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="63.895515"
          y="14.054562">Metalic = 0</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="63.895515"
          y="18.023312"
          id="tspan20">Specularity = 0.3</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="63.895515"
          y="21.992062"
          id="tspan21">Roughness = 0.25</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="59.949478"
        y="37.69463"
        id="text22"><tspan
          id="tspan22"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="59.949478"
          y="37.69463">Iron Bar Material</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="59.949478"
          y="41.66338"
          id="tspan23" /></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="64.624931"
        y="43.066269"
        id="text24"><tspan
          id="tspan24"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="43.066269">Metalic = 1</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="47.035019"
          id="tspan25">Specularity = 0.5</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="51.003769"
          id="tspan26">Roughness = 0.1</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="59.715534"
        y="67.358887"
        id="text27"><tspan
          id="tspan27"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="59.715534"
          y="67.358887">Glass Material</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="64.624931"
        y="71.304337"
        id="text28"><tspan
          id="tspan28"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="71.304337">Metalic = 0</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="75.273087"
          id="tspan29">Specularity = 0.5</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="64.624931"
          y="79.241837"
          id="tspan30">Roughness = 0</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="123.14774"
        y="74.414574"
        id="text31"><tspan
          id="tspan31"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="123.14774"
          y="74.414574">Glass Shader</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="121.17114"
        y="44.660965"
        id="text32"><tspan
          id="tspan32"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="121.17114"
          y="44.660965">Iron bar shader</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="122.55243"
        y="16.247606"
        id="text33"><tspan
          id="tspan33"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="122.55243"
          y="16.247606">Plastic shader</tspan></text>
     <text
        xml:space="preserve"
-       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       style="font-size:3.175px;fill:#e6e6e6;stroke-width:0.264583;stroke:#f9f9f9"
        x="10.758651"
        y="44.311054"
        id="text34"><tspan
          id="tspan34"
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="10.758651"
          y="44.311054">Projection Code</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="10.758651"
          y="48.279804"
          id="tspan35">Lighting Code</tspan><tspan
-         style="stroke-width:0.264583"
+         style="stroke-width:0.264583;stroke:#f9f9f9;fill:#e6e6e6"
          x="10.758651"
          y="52.248554"
          id="tspan36">[...]</tspan></text>
