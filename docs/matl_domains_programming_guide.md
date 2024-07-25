@@ -1,7 +1,6 @@
 # Domain programming
 
-## Intro
-So you want to create a domain.   
+## Creating Domain
 First thing is create a base shader in the expected language. Lets look at this example glsl shader:  
 
 ```glsl
