@@ -16,8 +16,10 @@ let offset = (0, 0)
 property color = calc_color()
 property vertex_offset = offset
 ```
-### Domains - shaders templates
-As you can see example above use some "domain". Domain is a template-shader which, when combined with material code creates a functional shader. Domain defines properties - those are fields where user can provide their own value, eg. color, metallic, specularity etc.
+
+## Architecture
+
+Matl uses so-called domains to generate shaders. Those are template-shaders which when combined with matl materials creates a functional shaders. Domain defines properties - those are fields where user can provide their own value, eg. color, metallic, specularity etc.
 By providing values / equations for each of the properties, we can create multiple shaders, while also writing things like lighting code only once!
 
 <details>
