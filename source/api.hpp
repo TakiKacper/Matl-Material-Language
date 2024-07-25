@@ -61,7 +61,10 @@ namespace matl
 
 	struct add_commonly_exposed_functions_raport
 	{
+		//Whether functions were successfully added
 		bool success = false;
+
+		//Parsing errors
 		std::list<std::string> errors;
 	};
 

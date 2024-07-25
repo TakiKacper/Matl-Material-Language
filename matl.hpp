@@ -111,7 +111,7 @@ inline void is_name_unique(
 	throw_error(variables != nullptr && variables->find(name) != variables->end(),
 		"Cannot use this name; Variable named: " + std::string(name) + " already exists");
 
-	throw_error(symbols != nullptr && symbols->find(name) != symbols->end(),
+	throw_error(symbols != nullptr && symbols != &reinterpret_cast<parsed_domain*>(0x0)->symbols && symbols->find(name) != symbols->end(),
 		"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
 
 	throw_error(parameters != nullptr && parameters->find(name) != parameters->end(),
