@@ -6,7 +6,7 @@ Integrating matl with Your engine is a pretty easy task, thanks to it's simple a
 - [Minimal matl integration step by step](#Minimal-matl-integration-step-by-step)
   - [Creating Context](#Creating-context)
   - [Parsing Domains](#Parsing-domains)
-  - [Parsing Materials](#Creating-context)
+  - [Parsing Materials](#Parsing-Materials)
   - [Destroying Context](#Destroying-Context)
   - [Minimal Example](#Minimal-Example)
 - [Implementing rest of matl features](#Implementing-rest-of-matl-features)
