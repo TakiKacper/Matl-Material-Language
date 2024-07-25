@@ -18,6 +18,7 @@ property vertex_offset = offset
 ```
 
 ## Architecture
+<img src="./docs/resources/matl_architecture_simple.svg">
 
 Matl uses so-called domains to generate shaders. Those are template-shaders which when combined with matl materials creates a functional shaders. Domain defines properties - those are fields where user can provide their own value, eg. color, metallic, specularity etc.
 By providing values / equations for each of the properties, we can create multiple shaders, while also writing things like lighting code only once!
