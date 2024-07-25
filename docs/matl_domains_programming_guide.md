@@ -9,6 +9,7 @@
   - [Exposing Symbols](#Exposing-symbols)
   - [Exposing Functions](#Exposing-functions)
   - [Insertions](#Insertions)
+- [Directives syntaxes](#Directives-syntaxes)
 
 ## Creating simple domain
 First thing is create a base shader in the expected language. Lets look at this example glsl shader:  
