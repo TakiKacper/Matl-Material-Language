@@ -18,8 +18,7 @@ property vertex_offset = offset
 ```
 ### Domains - shaders templates
 As you can see example above use some "domain". Domain is a template-shader which, when combined with material code creates a functional shader. Domain defines properties - those are fields where user can provide their own value, eg. color, metallic, specularity etc.
-It can also define symbols (those are things that are declared in domain's code and which materials can use in their calculations eg. world position, texture) and functions.
-Material to be valid must provide an value for every of domain's properties.
+By providing values / equations for each of the properties, we can create multiple shaders, while writing things like lighting code only once!
 
 <details>
   <summary>Example GLSL domain:</summary>
