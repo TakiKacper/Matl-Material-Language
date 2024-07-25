@@ -290,10 +290,51 @@ Once saved insertion can be pasted into the shader using following domain direct
 <dump insertion vertex_layout>
 ```
 ### Commonly exposed functions
+Languages like glsl or hlsl comes with a set of builtin functions like lerp or smoothstep. 
+Using those prebuilit ones, instead of own implementations of those functions will always be faster, because those will be accelerated and optimized to fully take advantage of the given hardware, 
+therefore it would be nice to make them available, to the materials.
+As You maybe know it can be done from domain using the ``function`` direcive from within the ``expose`` block, but doing that in every domain would be a huge repetition.  
+To solve this problem use the ``context::add_commonly_exposed_functions`` method. It takes only one argument: a source of domain that contains only ``<expose>``, ``<end>`` and ``function`` directives.
 
+<details>
+	<summary>example</summary>
+	
+```glsl
+<expose>
+    <function   lerp = scalar  lerp(scalar, scalar, scalar)>
+    <function   lerp = vector2 lerp(vector2, vector2, vector2)>
+    <function   lerp = vector3 lerp(vector3, vector3, vector3)>
+    <function   lerp = vector4 lerp(vector4, vector4, vector4)>
+
+    <function   lerp = vector2 lerp(vector2, vector2, scalar)>
+    <function   lerp = vector3 lerp(vector3, vector3, scalar)>
+    <function   lerp = vector4 lerp(vector4, vector4, scalar)>
+<end>
+```
+	
+</details>
+Functions exposed by this domain will now be available to every material no matter the domain.  
+
+The ``context::add_commonly_exposed_functions`` returns a ``add_commonly_exposed_functions_raport`` struct with information about the operation success.
+
+<details>
+	<summary>add_commonly_exposed_functions_raport definition</summary>
+
+```cpp
+struct add_commonly_exposed_functions_raport
+{
+	//Whether functions were successfully added
+	bool success = false;
+
+	//Parsing errors
+	std::list<std::string> errors;
+};
+```
+  
+</details>
 
 ### Custom using cases
-Matl allows user to add their own ``using`` keyword overload. This can be done from c++ by using context's ``add_custom_using_case_callback`` method:
+Matl allows user to add their own ``using`` keyword overload. This can be done from c++ by using ``context::add_custom_using_case_callback`` method:
 ```cpp
 void using_print(std::string args, std::string& error)
 {
