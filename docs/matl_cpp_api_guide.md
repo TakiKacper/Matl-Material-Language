@@ -4,15 +4,16 @@ Integrating matl with Your engine is a pretty easy task, thanks to it's simple a
 ## Contents
 - [Building](#Building)
 - [Minimal matl integration step by step](#Minimal-matl-integration-step-by-step)
-  - [Creating Context](#Creating-context)
-  - [Parsing Domains](#Parsing-domains)
-  - [Parsing Materials](#Parsing-Materials)
-  - [Destroying Context](#Destroying-Context)
-  - [Minimal Example](#Minimal-Example)
+  - [Creating context](#Creating-context)
+  - [Parsing domains](#Parsing-domains)
+  - [Parsing materials](#Parsing-materials)
+  - [Destroying context](#Destroying-context)
+  - [Minimal example](#Minimal-example)
 - [Implementing rest of matl features](#Implementing-rest-of-matl-features)
-  - [Parsing Libraries](#Parsing-Libraries)
-  - [Using Domain Insertions](#Using-Domain-Insertions)
-  - [Custom Using Case](#Custom-Using-Case)
+  - [Parsing libraries](#Parsing-libraries)
+  - [Using domain insertions](#Using-domain-insertions)
+  - [Commonly exposed functions](#Commonly-exposed-functions)
+  - [Custom using cases](#Custom-using-cases)
 
 ## Building  
 Building matl is similar to compiling single-header library, except you must include several files: matl parser (matl.hpp) and translators.
@@ -35,7 +36,7 @@ matl::context* context = matl::create_context("opengl_glsl");
 ```
 The argument of create_context is targeted shader language. The function will fail and return nullptr if there is no translator available for such language.
 
-### Parsing Domains
+### Parsing domains
 As mentioned in readme, domain is a template of a shader. See ``docs/matl_domains_programming_guide.md`` for more information about them. 
 ```cpp
 matl::domain_parsing_raport raport = matl::parse_domain("my_domain", domain_source, context);
@@ -67,7 +68,7 @@ The ``domain_source`` must be of type std::string.
 It is worth noting that if parsing fails domain will not be saved inside context, making it also not available for materials.  
 You can repeat this step multiple times to add more domains.
 
-### Parsing Materials
+### Parsing materials
 Once you have at least one domain loaded into your context you can attempt translating materials.
 ```cpp
 matl::parsed_material mat = matl::parse_material(material_source, context);
@@ -121,13 +122,13 @@ struct parsed_material
 
 </details>
 
-### Destroying Context
+### Destroying context
 After you parse all the materials, you should free the context memory using
 ```cpp
 matl::destroy_context(context);
 ```
 
-### Minimal Example
+### Minimal example
 At this point your application may look like this:
   
 <details>
@@ -201,7 +202,7 @@ int main()
 
 
 ## Implementing rest of matl features
-### Parsing Libraries
+### Parsing libraries
 Libraries are matl files that simply contains matl functions.
 <details>
 <summary>Example library: </summary>
@@ -277,7 +278,7 @@ struct library_parsing_raport
 ```
 </details>
 
-### Using Domain Insertions
+### Using domain insertions
 Insertions are code snippets that can be pasted into the shader code during it's assembly.  
 They can be saved inside context using following code:  
 ```cpp
@@ -288,8 +289,10 @@ Once saved insertion can be pasted into the shader using following domain direct
 ```
 <dump insertion vertex_layout>
 ```
+### Commonly exposed functions
 
-### Custom Using Case
+
+### Custom using cases
 Matl allows user to add their own ``using`` keyword overload. This can be done from c++ by using context's ``add_custom_using_case_callback`` method:
 ```cpp
 void using_print(std::string args, std::string& error)
@@ -307,6 +310,15 @@ With above setup, when matl parser come across
 using print a b cde fg
 ```
 It will call to ``using_print`` with ``args = "a b cde fg"``.
+
+
+
+
+
+
+
+
+
 
 
 
