@@ -43,7 +43,7 @@ matl::domain_parsing_raport raport = matl::parse_domain("my_domain", domain_sour
 for (auto& error : raport.errors) std::cout << error << '\n';
 if (!raport.success) handle_error();
 ```
-matl::parse_domain is a function that loads domain and saves it inside context and returns struct with informations about operation successfulness and errors.
+matl::parse_domain is a function that loads domain and saves it inside the context. It also returns struct with informations about operation's successfulness and errors.
 <details>
   <summary>domain_parsing_raport definition</summary>
 
@@ -60,13 +60,14 @@ struct domain_parsing_raport
   
 </details>
   
-First argument is the domain name - this name will be used inside matererials, in ``using domain (domain name)`` line.  
+First argument is the domain name - this name will be used inside materials, in ``using domain (domain name)`` line.  
 In this simple example we use name ``"my_domain"`` but it is suggested that you use something that represents used shading model or domain use case eg. surface-lit, postprocess, ui etc.   
   
 The ``domain_source`` must be of type std::string.
 
-It is worth noting that if parsing fails domain will not be saved inside context, making it also not available for materials.  
-You can repeat this step multiple times to add more domains.
+It is worth noting that parser fails to parse the domain, it will not be saved inside the context, making it not available for materials.  
+  
+You can repeat this step multiple times to add multiple domains.
 
 ### Parsing materials
 Once you have at least one domain loaded into your context you can attempt translating materials.
