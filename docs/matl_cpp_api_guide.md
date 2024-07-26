@@ -27,7 +27,7 @@ Building matl is similar to compiling single-header library, except you must inc
    
 ## Minimal matl integration step by step
 ### Creating context
-First of all, we must create a context. Context is an object that contains all informations required to parse matl material into working shader.
+First of all, we must create a context. Context is an object that contains all the informations required to parse matl material into a working shader.
 ```cpp
 #include "(path)/matl.hpp"
 
