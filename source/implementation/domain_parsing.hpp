@@ -248,6 +248,7 @@ void domain_directives_handles::function(const std::string& source, context_publ
 	auto& iterator = state.iterator;
 
 	throw_error(state.dump_properties_depedencies_scope, "Cannot use this directive here");
+	throw_error(state.redef_scope, "Cannot use this directive here");
 	throw_error(!state.expose_scope, "Cannot use this directive here");
 
 	get_spaces(source, iterator);
@@ -306,6 +307,8 @@ void domain_directives_handles::function(const std::string& source, context_publ
 		func_def.variables = {};
 	}
 	auto& func_def = func_itr->second;
+
+	throw_error(func_def.arguments.size() != arguments_types.size(), "Cannot expose a function instance with a different amount of arguments than in other instances")
 
 	func_def.instances.push_back({ &func_def });
 	auto& func_instance = func_def.instances.back();

@@ -54,7 +54,7 @@ struct context_public_implementation
 	heterogeneous_map<std::string, std::shared_ptr<parsed_library>, hgm_string_solver> libraries;
 	heterogeneous_map<std::string, matl::custom_using_case_callback*, hgm_string_solver> custom_using_handles;
 
-	matl::dynamic_library_parse_request_handle* dlprh = nullptr;
+	matl::library_source_request* lsr = nullptr;
 	translator* _translator = nullptr;
 };
 
@@ -111,7 +111,7 @@ inline void is_name_unique(
 	throw_error(variables != nullptr && variables->find(name) != variables->end(),
 		"Cannot use this name; Variable named: " + std::string(name) + " already exists");
 
-	throw_error(symbols != nullptr && symbols->find(name) != symbols->end(),
+	throw_error(symbols != nullptr && symbols != &reinterpret_cast<parsed_domain*>(0x0)->symbols && symbols->find(name) != symbols->end(),
 		"Cannot use this name; Symbol named: " + std::string(name) + " already exists");
 
 	throw_error(parameters != nullptr && parameters->find(name) != parameters->end(),
@@ -259,9 +259,9 @@ matl::add_commonly_exposed_functions_raport matl::context::add_commonly_exposed_
 	return raport;
 }
 
-void matl::context::set_dynamic_library_parse_request_handle(dynamic_library_parse_request_handle handle)
+void matl::context::set_library_source_request_callback(library_source_request handle)
 {
-	impl->impl.dlprh = handle;
+	impl->impl.lsr = handle;
 }
 
 template<class state_class>
