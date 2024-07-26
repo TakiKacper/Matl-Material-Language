@@ -29,7 +29,7 @@ Building matl is similar to compiling single-header library, except you must inc
 ### Creating context
 First of all, we must create a context. Context is an object that contains all informations required to parse matl material into working shader.
 ```cpp
-#include <(path)/matl.hpp>
+#include "(path)/matl.hpp"
 
 ...
 matl::context* context = matl::create_context("opengl_glsl");
