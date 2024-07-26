@@ -14,8 +14,7 @@
     - [Comments](#Comments)
     - [Functions](#Functions)
     - [Libraries](#Libraries)
-- [Writing Materials](#Writing-Materials)
-- [Writing Libraries](#Writing-Libraries)
+
 
 ## Boring Reference
 ### File types
@@ -35,7 +34,7 @@ vector3   :   mathematical vector with 3 dimensions
 vector4   :   mathematical vector with 4 dimensions
 texture   :   2 dimensional texture
 ```
-Metal is strongly typed and does not provide any implicit or explicit types conversions.
+Matl is strongly typed and does not provide any implicit or explicit types conversions.
 
 ### Scopes
 ```python
@@ -269,24 +268,68 @@ As you saw in previous listenings matl does allow single-line comments with the 
 Use it to explain the complex math of your materials!
 
 ### Functions
-Matl functions are very similar to mathematical functions.
+Matl functions are very similar to mathematical functions. They take a set of arguments and return an result.  
+Matl functions are transparent - that means they cannot use any extern state, like parameters or domain's symbols (we will get to them later on).
+You can create one with the ``func`` keyword:
 
+```js
+using domain opaque_color
+using parameter color_mod = 0.5
 
+func modify_color(color, mod)
+    let some_dummy_var_to_show_they_work_here_too = color * mod
+    return some_dummy_var_to_show_they_work_here_too * 0.5
 
+let base_color = (0.75, 0.75, 0.75, 1)
 
-## Writing Materials
-There is not many to cover in this topic, when the domains are unknown.  
-See if your engine does provide an documentation about materials scripting.
-Here is a list of requirements that material must met:
-```yaml
-1 : Domain must be included (using domain [...])
-2 : All properties of the given domain must be specified with property keyword
-3 : There must be no errors
+property color = modify_color(base_color, color_mod)
+property vertex_offset = (0, 0)
 ```
-Once the material met all the rules it can be translated into a proper shader and sent to the gpu.
 
-## Writing Libraries
-Just dump your functions into a file. See if your engine does have any special requirements
+The very important thing to notice is that matl functions are untyped. 
+Function can be used with any set of arguments types, as long as it does not lead to an inner error, like multiplying vectors of diffrent sizes.
+
+Functions will be very usefull tool when you have too do same calculations multiple times, but with diffrent arguments.
+
+### Libraries
+Functions inside materials can be handy, but their full power is revealed when used with libraries.  
+Libraries are like matl materials, except they do not specify any domain or any properites, just contains functions.
+```js 
+func mul(a, b)
+    return a * b
+
+func div(a, b)
+    return a / b
+```
+The library above is not usefull, but I couldn't think of anything better, so we will come with that. Imagine ``mul`` and ``div`` are that complex that they are worth making them functions.  
+Now what does libraries allows to do?
+- Libraries' functions can be accessed from any material, so we don't have to copy and paste the function into each of them. Just put your function into library and use it anywhere!
+
+But how do I access library inside material?
+- By using ``using library``:
+```js
+using domain opaque_color
+# assume that above library is named simple_library
+using library simple_library
+
+let base_color = (0.75, 0.75, 0.75, 1)
+
+property color = simple_library.mul(base_color, 0.2)
+property vertex_offset = simple_library.div((0, 0), 2)
+```
+The concrete function can be used with the syntax: ``[library_name].[function_name]``.  
+  
+There is only one problem left - how do I know the library name?
+- There is no answer to that question. It may vary between engines, since loading and naming libraries is their responsibility. Again then - see Your engine docs.
+
+
+
+
+
+
+
+
+
 
 
 
