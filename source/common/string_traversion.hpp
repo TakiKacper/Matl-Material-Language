@@ -185,7 +185,7 @@ inline string_ref get_rest_of_line(const std::string& source, size_t& iterator)
 	while (!is_at_line_end(source, iterator) && source.at(iterator) != comment_char)
 		iterator++;
 
-	if (source.at(iterator) == comment_char)
+	if (!is_at_line_end(source, iterator) && source.at(iterator) == comment_char)
 		iterator -= 1;
 
 	while (is_whitespace(source.at(iterator - 1)))
