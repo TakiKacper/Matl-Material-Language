@@ -128,7 +128,7 @@ struct hgm_string_solver
 		return parameters_declarations_translator == b;
 	}
 
-	static inline bool equal(const std::string& parameters_declarations_translator, const string_ref& b)
+	static inline bool equal(const std::string& parameters_declarations_translator, const string_view& b)
 	{
 		return b == parameters_declarations_translator;
 	}

@@ -42,7 +42,7 @@ inline const data_type* get_vector_type_of_size(uint8_t size)
 	return nullptr;
 }
 
-inline const data_type* const get_data_type(const string_ref& name)
+inline const data_type* const get_data_type(const string_view& name)
 {
 	for (auto& type : data_types)
 		if (type.name == name)

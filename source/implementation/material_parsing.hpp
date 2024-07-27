@@ -87,7 +87,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		state.this_line_indentation_spaces = spaces;
 
 		{
-			string_ref keyword = get_string_ref(source, iterator, error);
+			string_view keyword = get_string_ref(source, iterator, error);
 
 			if (error != "") goto _parse_material_handle_error;
 
@@ -170,11 +170,11 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	auto should_inline_variable = [&](const named_variable* var, const uint32_t& uses_count) -> bool
 	{
 		return
-			var->second.definition->equations.size() == 1 &&							//variables does not contain ifs
+			var->second.definition->cases.size() == 1 &&							//variables does not contain ifs
 			(																			//and
 				uses_count <= 1 														//variables is used only once 
 				||																		//or
-				var->second.definition->equations.front()->value->nodes.size() == 1		//it is made of a single node
+				var->second.definition->cases.front()->value->nodes.size() == 1		//it is made of a single node
 			);
 	};
 

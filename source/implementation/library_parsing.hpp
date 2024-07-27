@@ -3,7 +3,7 @@
 struct parsed_libraries_stack
 {
 private:
-	std::vector<string_ref> libraries_stack;
+	std::vector<string_view> libraries_stack;
 public:
 	inline void push_parsed_lib(const std::string& lib_name, std::string& error);
 	inline void pop();
@@ -53,7 +53,7 @@ struct library_parsing_state
 	function_collection functions;
 	libraries_collection libraries;
 
-	string_ref library_name{ "" };
+	string_view library_name{ "" };
 };
 
 
@@ -157,7 +157,7 @@ void parse_library_implementation(
 		state.this_line_indentation_spaces = spaces;
 
 		{
-			string_ref keyword = get_string_ref(source, iterator, error);
+			string_view keyword = get_string_ref(source, iterator, error);
 
 			if (error != "") goto _parse_library_handle_error;
 

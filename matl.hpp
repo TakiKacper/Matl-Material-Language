@@ -10,7 +10,7 @@
 
 #ifdef MATL_IMPLEMENTATION
 
-const std::string language_version = "0.5";
+const std::string language_version = "0.6";
 
 #define MATL_IMPLEMENTATION_INCLUDED
 
@@ -68,8 +68,8 @@ void get_used_variables_recursive(const expression* exp, counting_set<named_vari
 {
 	for (auto& var : exp->used_variables)
 	{
-		if (var->second.definition != nullptr && to_dump.insert(var) == 1)
-			get_used_variables_recursive(var->second.definition, to_dump);
+		if (var->second.value != nullptr && to_dump.insert(var) == 1)
+			get_used_variables_recursive(var->second.value, to_dump);
 	}
 }
 
@@ -81,7 +81,7 @@ void get_used_functions_recursive(expression* exp, counting_set<function_instanc
 			to_dump.insert(f);
 
 	for (auto& func : exp->used_variables)
-		get_used_functions_recursive(func->second.definition, to_dump);
+		get_used_functions_recursive(func->second.value, to_dump);
 }
 
 #include "source/common/expressions_parsing.hpp"
@@ -89,14 +89,14 @@ void get_used_functions_recursive(expression* exp, counting_set<function_instanc
 namespace handles_common
 {
 	template<class state_class>
-	void func(const string_ref& unique_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
+	void func(const string_view& unique_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
 
 	template<class state_class>
 	void _return(const std::string& source, context_public_implementation& context, state_class& state, std::string& error);
 }
 
 inline void is_name_unique(
-	const string_ref& name, 
+	const string_view& name, 
 	const variables_collection* variables,
 	const decltype(parsed_domain::symbols)* symbols,
 	const parameters_collection* parameters,
@@ -265,7 +265,7 @@ void matl::context::set_library_source_request_callback(library_source_request h
 }
 
 template<class state_class>
-void handles_common::func(const string_ref& unique_function_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error)
+void handles_common::func(const string_view& unique_function_name, const std::string& source, context_public_implementation& context, state_class& state, std::string& error)
 {
 	throw_error(state.function_body, "Cannot declare function inside another function");
 
