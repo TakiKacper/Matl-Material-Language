@@ -36,6 +36,7 @@ const data_type* bool_data_type = get_data_type({ "bool" });
 const data_type* texture_data_type = get_data_type({ "texture" });
 
 //variable and it's equation translated
+//if variable is in this map, do not put it's name into translated shader, but it's translation (string at key)
 using inlined_variables = std::unordered_map<const named_variable*, std::string>;
 
 #include "source/translator.hpp"

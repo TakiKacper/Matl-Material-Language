@@ -14,7 +14,7 @@ struct material_parsing_state
 	parameters_collection parameters;
 	function_collection functions;
 	libraries_collection libraries;
-	heterogeneous_map<std::string, property_definition, hgm_string_solver> properties;
+	heterogeneous_map<std::string, property_value, hgm_string_solver> properties;
 
 	std::shared_ptr<const parsed_domain> domain = nullptr;
 };

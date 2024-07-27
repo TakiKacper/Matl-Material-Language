@@ -270,7 +270,7 @@ void library_keywords_handles::let
 	auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 	var_def.definition_line = state.line_counter;
 
-	var_def.definition = get_expression(
+	var_def.value = get_expression(
 		source,
 		iterator,
 		state.this_line_indentation_spaces,
