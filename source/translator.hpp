@@ -16,7 +16,7 @@ struct translator
 	const _expression_translator expression_translator;
 
 	using _variables_declarations_translator = std::string(*)(
-		const string_ref& name,
+		const string_view& name,
 		const variable_definition* const& var,
 		const inlined_variables* inlined,
 		const std::vector<function_instance*>& functions_instances,
@@ -25,7 +25,7 @@ struct translator
 	const _variables_declarations_translator variables_declarations_translator;
 
 	using _parameters_declarations_translator = std::string(*)(
-		const string_ref& name,
+		const string_view& name,
 		const parameter_definition* const& param
 	);
 	_parameters_declarations_translator parameters_declarations_translator;

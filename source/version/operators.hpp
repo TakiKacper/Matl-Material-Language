@@ -133,7 +133,7 @@ const std::unordered_map<char, uint8_t> vector_components_names = {
 	{ 'a', 4 }
 };
 
-inline const unary_operator_definition* const get_unary_operator(const string_ref& symbol)
+inline const unary_operator_definition* const get_unary_operator(const string_view& symbol)
 {
 	for (auto& op : unary_operators)
 		if (op.symbol == symbol)
@@ -141,7 +141,7 @@ inline const unary_operator_definition* const get_unary_operator(const string_re
 	return nullptr;
 }
 
-inline const binary_operator_definition* const get_binary_operator(const string_ref& symbol)
+inline const binary_operator_definition* const get_binary_operator(const string_view& symbol)
 {
 	for (auto& op : binary_operators)
 		if (op.symbol == symbol)

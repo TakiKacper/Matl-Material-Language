@@ -87,7 +87,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		state.this_line_indentation_spaces = spaces;
 
 		{
-			string_ref keyword = get_string_ref(source, iterator, error);
+			string_view keyword = get_string_ref(source, iterator, error);
 
 			if (error != "") goto _parse_material_handle_error;
 
@@ -159,9 +159,9 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		material.sources.back() += '(';
 		material.sources.back() += translator->expression_translator(
-			property.definition,
+			property.value,
 			&inlined,
-			property.definition->used_functions.at(0),
+			property.value->used_functions.at(0),
 			current_symbols_definitions
 		);
 		material.sources.back() += ')';
@@ -170,11 +170,11 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 	auto should_inline_variable = [&](const named_variable* var, const uint32_t& uses_count) -> bool
 	{
 		return
-			var->second.definition->equations.size() == 1 &&							//variables does not contain ifs
-			(																			//and
-				uses_count <= 1 														//variables is used only once 
-				||																		//or
-				var->second.definition->equations.front()->value->nodes.size() == 1		//it is made of a single node
+			var->second.value->cases.size() == 1 &&								//variables does not contain ifs
+			(																	//and
+				uses_count <= 1 												//variables is used only once 
+				||																//or
+				var->second.value->cases.front()->value->nodes.size() == 1		//it is made of a single node
 			);
 	};
 
@@ -199,7 +199,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		for (auto& prop : directive.payload)
 		{
-			const auto& prop_exp = state.properties.at(prop).definition;
+			const auto& prop_exp = state.properties.at(prop).value;
 			get_used_variables_recursive(prop_exp, variables);
 		}
 
@@ -209,13 +209,13 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 		{
 			auto& variable_name = (*var_itr)->first->first;
 			auto& variable = (*var_itr)->first->second;
-			auto& used_functions = variable.definition->used_functions.at(0);
+			auto& used_functions = variable.value->used_functions.at(0);
 
 			if (should_inline_variable((*var_itr)->first, (*var_itr)->second))
 			{
 				inlined.insert({
 					(*var_itr)->first,
-					"(" + translator->expression_translator(variable.definition, &inlined, used_functions, current_symbols_definitions)+ ")"
+					"(" + translator->expression_translator(variable.value, &inlined, used_functions, current_symbols_definitions)+ ")"
 				});
 			}
 			else
@@ -232,7 +232,7 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 
 		for (auto& prop : directive.payload)
 		{
-			const auto& prop_exp = state.properties.at(prop).definition;
+			const auto& prop_exp = state.properties.at(prop).value;
 			get_used_functions_recursive(prop_exp, functions);
 		}
 
@@ -267,14 +267,14 @@ matl::parsed_material matl::parse_material(const std::string& material_source, m
 			{
 				auto& variable_name = (*var_itr)->first->first;
 				auto& variable = (*var_itr)->first->second;
-				auto& used_functions = (*var_itr)->first->second.definition->used_functions.at(instance_index);
+				auto& used_functions = (*var_itr)->first->second.value->used_functions.at(instance_index);
 
 				if (should_inline_variable((*var_itr)->first, (*var_itr)->second))
 				{
 					inlined_function_vars.insert({
 						(*var_itr)->first,
 						"(" + translator->expression_translator(
-							variable.definition, &inlined_function_vars, used_functions, current_symbols_definitions) + ")"
+							variable.value, &inlined_function_vars, used_functions, current_symbols_definitions) + ")"
 					});
 				}
 				else
@@ -413,7 +413,7 @@ void material_keywords_handles::let
 		auto& var_def = state.variables.insert({ var_name, {} })->second;
 		var_def.definition_line = state.line_counter;
 
-		var_def.definition = get_expression(
+		var_def.value = get_expression(
 			source,
 			iterator,
 			state.this_line_indentation_spaces,
@@ -428,7 +428,7 @@ void material_keywords_handles::let
 		);
 		rethrow_error();
 
-		var_def.type = validate_expression(var_def.definition, state.domain, error);
+		var_def.type = validate_expression(var_def.value, state.domain, error);
 		rethrow_error();
 	}
 	else
@@ -450,7 +450,7 @@ void material_keywords_handles::let
 		auto& var_def = func_def.variables.insert({ var_name, {} })->second;
 		var_def.definition_line = state.line_counter;
 
-		var_def.definition = get_expression(
+		var_def.value = get_expression(
 			source,
 			iterator,
 			state.this_line_indentation_spaces,
@@ -491,7 +491,7 @@ void material_keywords_handles::property
 		"Equation for property " + std::string(property_name) + " is already specified");
 
 	auto& prop = state.properties.insert({ property_name, {} })->second;
-	prop.definition = get_expression(
+	prop.value = get_expression(
 		source,
 		iterator,
 		state.this_line_indentation_spaces,
@@ -506,7 +506,7 @@ void material_keywords_handles::property
 	);
 	rethrow_error();
 
-	auto type = validate_expression(prop.definition, state.domain, error);
+	auto type = validate_expression(prop.value, state.domain, error);
 	rethrow_error();
 
 	if (itr->second != type)

@@ -9,7 +9,7 @@ void instantiate_function(
 
 namespace expressions_parsing_utilities
 {
-	inline string_ref get_node_str(const std::string& source, size_t& iterator, std::string& error)
+	inline string_view get_node_str(const std::string& source, size_t& iterator, std::string& error)
 	{
 		if (source.size() >= iterator + 1)
 		{
@@ -20,14 +20,14 @@ namespace expressions_parsing_utilities
 				)
 			{
 				iterator += 2;
-				return string_ref{ source, iterator - 2, iterator };
+				return string_view{ source, iterator - 2, iterator };
 			}
 		}
 
 		if (is_operator(source.at(iterator)))
 		{
 			iterator++;
-			return string_ref{ source, iterator - 1, iterator };
+			return string_view{ source, iterator - 1, iterator };
 		}
 
 		size_t begin = iterator;
@@ -68,7 +68,7 @@ namespace expressions_parsing_utilities
 				error += source.at(iterator);
 		}
 
-		return string_ref{ source, begin, iterator };
+		return string_view{ source, begin, iterator };
 	}
 
 	inline bool is_function_call(const std::string& source, size_t& iterator)
@@ -81,7 +81,7 @@ namespace expressions_parsing_utilities
 		return (source.at(iterator) == '(');
 	}
 
-	inline bool is_scalar_literal(const string_ref& node_str, std::string& error)
+	inline bool is_scalar_literal(const string_view& node_str, std::string& error)
 	{
 		size_t dot_pos = -1;
 
@@ -99,12 +99,12 @@ namespace expressions_parsing_utilities
 		return true;
 	}
 
-	inline bool is_unary_operator(const string_ref& node_str)
+	inline bool is_unary_operator(const string_view& node_str)
 	{
 		return get_unary_operator(node_str) != nullptr;
 	}
 
-	inline bool is_binary_operator(const string_ref& node_str)
+	inline bool is_binary_operator(const string_view& node_str)
 	{
 		return get_binary_operator(node_str) != nullptr;
 	}
@@ -199,7 +199,7 @@ namespace expressions_parsing_utilities
 		libraries_collection* libraries,
 		const context_public_implementation& context_impl,
 		std::shared_ptr<const parsed_domain> domain,
-		std::list<expression::equation*>& equations,
+		std::list<expression::exp_case*>& cases,
 		std::list<expression::node*>& output,
 		std::list<expression::node*>& operators,
 		std::vector<named_variable*>& used_variables,
@@ -331,7 +331,7 @@ namespace expressions_parsing_utilities
 		bool expecting_library_function = false;
 		bool expecting_exposed = false;
 
-		string_ref library_name = { nullptr };
+		string_view library_name = { nullptr };
 
 		bool if_used = false;
 		bool else_used = false;
@@ -361,7 +361,7 @@ namespace expressions_parsing_utilities
 				if (if_used)
 				{
 					check_expression();
-					equations.back()->value = new expression::single_expression(output);
+					cases.back()->value = new expression::single_expression(output);
 				}
 
 				if_used = true;
@@ -374,7 +374,7 @@ namespace expressions_parsing_utilities
 				throw_error(else_used, "Cannot specify two else cases");
 
 				check_expression();
-				equations.back()->value = new expression::single_expression(output);
+				cases.back()->value = new expression::single_expression(output);
 
 				else_used = true;
 				accepts_right_unary_operator = true;
@@ -389,14 +389,14 @@ namespace expressions_parsing_utilities
 
 				if (!else_used)
 				{
-					equations.push_back(new expression::equation{
+					cases.push_back(new expression::exp_case{
 						new expression::single_expression(output),
 						nullptr
 					});
 				}
 				else
 				{
-					equations.push_back(new expression::equation{
+					cases.push_back(new expression::exp_case{
 						nullptr,
 						nullptr
 					});
@@ -636,10 +636,10 @@ namespace expressions_parsing_utilities
 		throw_error(expecting_library_function, "Invalid expression");
 		throw_error(if_used && !else_used, "Each if statement must go along with an else statement")
 
-			if (equations.size() != 0)
-				equations.back()->value = new expression::single_expression(output);
+			if (cases.size() != 0)
+				cases.back()->value = new expression::single_expression(output);
 			else
-				equations.push_back(new expression::equation{
+				cases.push_back(new expression::exp_case{
 					nullptr,
 					new expression::single_expression(output)
 					});
@@ -873,7 +873,7 @@ expression* get_expression(
 	std::string& error
 )
 {
-	std::list<expression::equation*> equations;
+	std::list<expression::exp_case*> cases;
 	std::list<expression::node*> output;
 	std::list<expression::node*> operators;
 
@@ -891,7 +891,7 @@ expression* get_expression(
 		libraries,
 		context,
 		domain,
-		equations,
+		cases,
 		output,
 		operators,
 		used_vars,
@@ -906,13 +906,13 @@ expression* get_expression(
 		for (auto& n : operators)
 			delete n;
 
-		for (auto& e : equations)
+		for (auto& e : cases)
 			delete e;
 
 		return nullptr;
 	}
 
-	return new expression(equations, used_vars, {});
+	return new expression(cases, used_vars, {});
 }
 
 const data_type* validate_expression(
@@ -949,9 +949,9 @@ const data_type* validate_expression(
 	const data_type* type = nullptr;
 
 	int counter = 1;
-	for (auto& equation : exp->equations)
+	for (auto& exp_case : exp->cases)
 	{
-		const data_type* value_type = validate_literal_expression(equation->value);
+		const data_type* value_type = validate_literal_expression(exp_case->value);
 		if (error != "") return nullptr;
 		if (type == nullptr) type = value_type;
 		else if (value_type != type)
@@ -961,13 +961,13 @@ const data_type* validate_expression(
 			return nullptr;
 		}
 
-		if (equation->condition == nullptr)
+		if (exp_case->condition == nullptr)
 		{
 			counter++;
 			continue;
 		}
 
-		const data_type* condition_type = validate_literal_expression(equation->condition);
+		const data_type* condition_type = validate_literal_expression(exp_case->condition);
 		if (error != "") return nullptr;
 		if (condition_type != bool_data_type)
 		{
@@ -1003,7 +1003,7 @@ void instantiate_function(
 
 		std::string error2;
 
-		auto type = validate_expression(var.definition, nullptr, error2);
+		auto type = validate_expression(var.value, nullptr, error2);
 		var.type = type;
 
 		variables_types.push_back(var.type);
@@ -1017,7 +1017,7 @@ void instantiate_function(
 			error += error2;
 		}
 
-		for (auto& func : var.definition->used_functions)
+		for (auto& func : var.value->used_functions)
 			used_functions.push_back(func);
 
 		itr++;
@@ -1037,6 +1037,5 @@ void instantiate_function(
 
 	if (!instance.valid) return;
 
-	instance.variables_types = std::move(variables_types);
 	instance.returned_type = type;
 }

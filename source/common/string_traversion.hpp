@@ -1,8 +1,8 @@
 #pragma once
 
-struct string_ref
+struct string_view
 {
-	friend bool operator==(const string_ref& ref, const std::string& other);
+	friend bool operator==(const string_view& ref, const std::string& other);
 
 private:
 	const std::string* source;
@@ -11,12 +11,12 @@ public:
 	size_t begin;
 	size_t end;
 
-	string_ref(std::nullptr_t) : source(nullptr), begin(0), end(0) {};
+	string_view(std::nullptr_t) : source(nullptr), begin(0), end(0) {};
 
-	string_ref(const std::string& _source, size_t _begin, size_t _end)
+	string_view(const std::string& _source, size_t _begin, size_t _end)
 		: source(&_source), begin(_begin), end(_end) {};
 
-	string_ref(const std::string& _source)
+	string_view(const std::string& _source)
 		: source(&_source), begin(0), end(_source.size()) {};
 
 	operator std::string() const
@@ -24,7 +24,7 @@ public:
 		return source->substr(begin, end - begin);
 	}
 
-	void operator= (const string_ref& other)
+	void operator= (const string_view& other)
 	{
 		source = other.source;
 		begin = other.begin;
@@ -42,7 +42,7 @@ public:
 	}
 };
 
-inline bool operator==(const string_ref& ref, const std::string& other)
+inline bool operator==(const string_view& ref, const std::string& other)
 {
 	if (ref.size() != other.size()) return false;
 
@@ -53,12 +53,12 @@ inline bool operator==(const string_ref& ref, const std::string& other)
 	return true;
 }
 
-inline bool operator == (const std::string& other, const string_ref& q)
+inline bool operator == (const std::string& other, const string_view& q)
 {
 	return operator==(q, other);
 }
 
-inline bool operator == (const string_ref& q, const string_ref& p)
+inline bool operator == (const string_view& q, const string_view& p)
 {
 	return q.begin == p.begin && q.end == p.end;
 }
@@ -146,7 +146,7 @@ inline int get_spaces(const std::string& source, size_t& iterator)
 	return spaces;
 }
 
-inline string_ref get_string_ref(const std::string& source, size_t& iterator, std::string& error)
+inline string_view get_string_ref(const std::string& source, size_t& iterator, std::string& error)
 {
 	size_t begin = iterator;
 
@@ -173,12 +173,12 @@ inline string_ref get_string_ref(const std::string& source, size_t& iterator, st
 			error += source.at(iterator);
 	}
 
-	return string_ref(source, begin, iterator);
+	return string_view(source, begin, iterator);
 }
 
 extern const char comment_char;
 
-inline string_ref get_rest_of_line(const std::string& source, size_t& iterator)
+inline string_view get_rest_of_line(const std::string& source, size_t& iterator)
 {
 	size_t begin = iterator;
 
