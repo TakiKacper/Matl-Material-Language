@@ -534,7 +534,8 @@ namespace expressions_parsing_utilities
 					expecting_exposed = false;
 
 					itr = const_cast<parsed_domain*>(domain.get())->functions.find(node_str);
-					if (itr != domain->functions.end()) goto _shunting_yard_process_function;
+					throw_error(itr == domain->functions.end(), "No such function: " + std::string(node_str));
+					goto _shunting_yard_process_function;
 				}
 				else
 				{
@@ -549,8 +550,8 @@ namespace expressions_parsing_utilities
 				}
 
 			_shunting_yard_process_function:
-				throw_error(!expecting_library_function && !itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
-				throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(library_name) + "." + std::string(node_str));	
+				throw_error(expecting_library_function && !itr->second.valid, "Cannot use invalid function: " + std::string(library_name) + "." + std::string(node_str));
+				throw_error(!itr->second.valid, "Cannot use invalid function: " + std::string(node_str));
 
 				throw_error(itr->second.arguments.size() != args_ammount,
 					"Function " + std::string(node_str)
